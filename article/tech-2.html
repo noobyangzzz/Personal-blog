@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nginx 反向代理实战 - noobyangzzz</title>
+    <link rel="stylesheet" href="../css/style.css?v=20260325">
+</head>
+<body>
+    <header class="header">
+        <div class="container">
+            <h1 class="logo"><a href="../index.html">noobyangzzz</a></h1>
+            <nav class="nav">
+                <a href="../index.html" class="nav-link">首页</a>
+                <a href="../sections/tech.html" class="nav-link section-link">技术</a>
+                <a href="../sections/movie.html" class="nav-link section-link">电影</a>
+                <a href="../sections/music.html" class="nav-link section-link">音乐</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="main">
+        <section class="section content-section">
+            <div class="container">
+                <button class="back-btn" onclick="history.back()">← 返回技术</button>
+                <div class="article-detail">
+                    <div class="article-detail-header">
+                        <h1 class="article-detail-title">Nginx 反向代理实战</h1>
+                        <div class="article-detail-meta">
+                            <span>发布于 2026-03-15</span> |
+                            <span>作者: noobyangzzz</span> |
+                            <span>阅读: 256</span>
+                        </div>
+                    </div>
+                    <div class="article-detail-content">
+                        <p>Nginx 是高性能的 HTTP 服务器和反向代理服务器。</p>
+                        <p>本文介绍如何配置 Nginx 反向代理：</p>
+                        <pre><code>server {
+    listen 80;
+    server_name example.com;
+
+    location / {
+        proxy_pass http://backend;
+    }
+}</code></pre>
+                        <p>通过合理的配置，可以实现负载均衡、缓存加速、安全防护等功能。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2026 noobyangzzz. All rights reserved.</p>
+        </div>
+    </footer>
+</body>
+</html>

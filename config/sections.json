@@ -1,0 +1,25 @@
+{
+  "sections": [
+    {
+      "id": "tech",
+      "name": "技术",
+      "icon": "💻",
+      "description": "分享技术心得与编程经验",
+      "color": "#3498db"
+    },
+    {
+      "id": "movie",
+      "name": "电影",
+      "icon": "🎬",
+      "description": "电影评论与观后感",
+      "color": "#e74c3c"
+    },
+    {
+      "id": "music",
+      "name": "音乐",
+      "icon": "🎵",
+      "description": "音乐推荐与评论",
+      "color": "#9b59b6"
+    }
+  ]
+}

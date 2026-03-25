@@ -1,0 +1,31 @@
+{
+  "articles": [
+    {
+      "id": "tech-1",
+      "title": "C++ muduo 网络库源码解析",
+      "excerpt": "深入分析 muduo 库的 Reactor 模式实现，了解事件循环、连接管理等核心机制。",
+      "content": "<p>muduo 是一个基于 Reactor 模式的 C++ 网络库，它的設計思想值得我们深入学习。</p><p>Reactor 模式是一种事件驱动编程模型，核心是将 IO 操作和业务逻辑分离。</p><p>在 muduo 中，主要包含以下组件：</p><ul><li>TcpServer - 服务器主类</li><li>EventLoop - 事件循环</li><li>Channel - 事件通道</li><li>Poller - IO 多路复用封装</li></ul><p>通过学习 muduo，我们可以掌握现代 C++ 网络编程的最佳实践。</p>",
+      "date": "2026-03-20",
+      "author": "noobyangzzz",
+      "views": 128
+    },
+    {
+      "id": "tech-2",
+      "title": "Nginx 反向代理实战",
+      "excerpt": "如何使用 Nginx 配置反向代理，实现负载均衡和动静分离。",
+      "content": "<p>Nginx 是高性能的 HTTP 服务器和反向代理服务器。</p><p>本文介绍如何配置 Nginx 反向代理：</p><pre><code>server {\n    listen 80;\n    server_name example.com;\n    location / {\n        proxy_pass http://backend;\n    }\n}</code></pre><p>通过合理的配置，可以实现负载均衡、缓存加速、安全防护等功能。</p>",
+      "date": "2026-03-15",
+      "author": "noobyangzzz",
+      "views": 256
+    },
+    {
+      "id": "tech-3",
+      "title": "Redis 缓存设计模式",
+      "excerpt": "探讨常见的缓存穿透、缓存雪崩问题及其解决方案。",
+      "content": "<p>Redis 是高性能的键值存储数据库，广泛用于缓存场景。</p><p>常见问题及解决方案：</p><h3>缓存穿透</h3><p>使用布隆过滤器或缓存空值来防止无效请求穿透到数据库。</p><h3>缓存雪崩</h3><p>设置随机过期时间，使用持久化 + 多级缓存架构。</p><h3>缓存击穿</h3><p>使用互斥锁或永不过期 + 异步更新的策略。</p>",
+      "date": "2026-03-10",
+      "author": "noobyangzzz",
+      "views": 189
+    }
+  ]
+}

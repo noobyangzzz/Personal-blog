@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>noobyangzzz</title>
+    <link rel="stylesheet" href="css/style.css?v=20260325">
+</head>
+<body>
+    <header class="header">
+        <div class="container">
+            <h1 class="logo"><a href="index.html">noobyangzzz</a></h1>
+            <nav class="nav">
+                <a href="#" class="nav-link active" data-section="home">首页</a>
+                <div id="dynamic-nav"></div>
+            </nav>
+        </div>
+    </header>
+
+    <main class="main">
+        <section id="home-section" class="section hero">
+            <div class="container">
+                <h2>欢迎来到 noobyangzzz 的博客</h2>
+                <p>记录生活，分享感悟</p>
+            </div>
+        </section>
+
+        <section id="sections-container" class="section sections-grid">
+            <div class="container">
+                <div id="sections-wrapper" class="sections-wrapper"></div>
+            </div>
+        </section>
+
+        <section id="content-section" class="section content-section" style="display: none;">
+            <div class="container">
+                <button class="back-btn" onclick="showHome()">← 返回首页</button>
+                <div id="content-wrapper"></div>
+            </div>
+        </section>
+
+        <section id="article-section" class="section content-section" style="display: none;">
+            <div class="container">
+                <button class="back-btn" id="back-to-section">← 返回</button>
+                <div id="article-wrapper"></div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2026 noobyangzzz. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="js/main.js?v=20260325"></script>
+</body>
+</html>

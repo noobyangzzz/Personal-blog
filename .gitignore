@@ -1,0 +1,30 @@
+# Nginx logs
+/home/yang/nginx-1.16.1/logs/*.log
+
+# Generated log files
+*.txt
+!config/*.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+
+# Node (if any)
+node_modules/
+npm-debug.log
+yarn-debug.log
