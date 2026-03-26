@@ -134,3 +134,14 @@ pkill -f log_tail.py && python3 /home/yang/blog/log_tail.py &
 
 ### 文章内容加载
 文章内容（HTML）通过 `content_path` 字段指定的静态文件路径直接加载，不存储在数据库中。
+
+### 文章内容懒加载
+文章详情页使用渐进式渲染策略，避免大型文章（如 tech-6.html）加载时阻塞浏览器：
+
+1. **实现位置**: `js/main.js` 的 `renderContentProgressive()` 方法
+2. **工作原理**: 按 `<h1>` 标签分割内容，使用 `requestAnimationFrame` 分帧逐步渲染
+3. **特点**:
+   - 通用策略，适用于所有文章
+   - 无需修改文章 HTML 结构
+   - 未来发布的任何大型文章都会自动受益于此策略
+4. **触发条件**: 文章内容通过 `showArticle()` 加载时自动启用

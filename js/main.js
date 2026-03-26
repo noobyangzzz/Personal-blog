@@ -227,12 +227,12 @@ class BlogApp {
             </div>
         `;
 
-        // Load article content from static HTML file
+        // Load article content from static HTML file with progressive rendering
         try {
             const contentResponse = await fetch(`/${article.content_path}`);
             if (contentResponse.ok) {
                 const contentHtml = await contentResponse.text();
-                document.getElementById('article-content-loading').innerHTML = contentHtml;
+                await this.renderContentProgressive(contentHtml);
             } else {
                 document.getElementById('article-content-loading').innerHTML = '<p>内容加载失败</p>';
             }
@@ -245,6 +245,27 @@ class BlogApp {
         this.logVisit(articleId, section.id);
 
         history.pushState({page: 'article', articleId, sectionId: section.id}, '', `#article-${articleId}`);
+    }
+
+    async renderContentProgressive(contentHtml) {
+        const container = document.getElementById('article-content-loading');
+        if (!container) return;
+
+        // Split content by h1 sections for progressive loading
+        const sections = contentHtml.split(/(?=<h1>)/);
+
+        for (let i = 0; i < sections.length; i++) {
+            await new Promise(resolve => {
+                requestAnimationFrame(() => {
+                    container.innerHTML += sections[i];
+                    resolve();
+                });
+            });
+            // Small delay between sections to prevent blocking
+            if (i < sections.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 16));
+            }
+        }
     }
 
     async logVisit(articleId, sectionId) {
