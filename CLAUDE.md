@@ -15,10 +15,11 @@ blog/
 ├── js/
 │   └── main.js         # 核心逻辑 (BlogApp 类，从 API 读取数据)
 ├── article/            # 文章详情页 HTML（静态内容）
-│   ├── tech-1.html ~ tech-3.html
+│   ├── tech-1.html ~ tech-6.html
 │   ├── movie-1.html ~ movie-2.html
 │   └── music-1.html ~ music-2.html
 ├── drafts/              # 草稿目录 (Markdown/PDF 文档)
+├── log_tail.py          # 日志监控脚本
 ├── backend/             # C++ 后端 API
 │   ├── main.cpp         # Crow HTTP 框架 + MySQL Connector
 │   └── CMakeLists.txt   # 构建配置
@@ -145,3 +146,15 @@ pkill -f log_tail.py && python3 /home/yang/blog/log_tail.py &
    - 无需修改文章 HTML 结构
    - 未来发布的任何大型文章都会自动受益于此策略
 4. **触发条件**: 文章内容通过 `showArticle()` 加载时自动启用
+
+### 文章发布流程
+项目使用 `blog-publish` skill 将 Markdown 发布为博客文章：
+
+1. **编写 Markdown**: 在 `drafts/` 目录编写 .md 文件
+2. **运行发布命令**: `/blog-publish drafts_filename.md`
+3. **自动生成**:
+   - HTML 文件 → `article/{section}-{id}.html`
+   - SQL INSERT 语句 → 用于插入数据库
+4. **执行 SQL**: 将文章元数据写入 MySQL
+
+**注意**: `blog-publish.py` 脚本待实现，当前发布流程为手动。

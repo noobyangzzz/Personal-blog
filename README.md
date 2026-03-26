@@ -30,7 +30,10 @@ blog/
 ├── js/
 │   └── main.js         # 前端逻辑 (从 API 读取数据)
 ├── article/            # 文章静态 HTML 内容
-├── drafts/             # 草稿目录
+│   ├── tech-1.html ~ tech-6.html
+│   ├── movie-1.html ~ movie-2.html
+│   └── music-1.html ~ music-2.html
+├── drafts/             # 草稿目录 (Markdown/PDF)
 ├── backend/            # C++ 后端 API
 │   ├── main.cpp        # API 源码
 │   └── CMakeLists.txt  # 构建配置

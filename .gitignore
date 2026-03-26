@@ -33,3 +33,4 @@ yarn-debug.log
 # C++ build artifacts
 backend/build/
 backend/crow_install/
+/home/yang/.github_token
