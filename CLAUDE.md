@@ -7,24 +7,25 @@
 ```
 blog/
 ├── index.html          # 主页
+├── README.md           # 项目说明
 ├── CLAUDE.md           # 本文档
+├── .gitignore          # Git 忽略配置
 ├── css/
 │   └── style.css       # 样式文件
 ├── js/
 │   └── main.js         # 核心逻辑 (BlogApp 类，从 API 读取数据)
 ├── article/            # 文章详情页 HTML（静态内容）
-│   ├── tech-1.html, tech-2.html, tech-3.html
-│   ├── movie-1.html, movie-2.html
-│   └── music-1.html, music-2.html
+│   ├── tech-1.html ~ tech-3.html
+│   ├── movie-1.html ~ movie-2.html
+│   └── music-1.html ~ music-2.html
 ├── drafts/              # 草稿目录 (Markdown/PDF 文档)
 ├── backend/             # C++ 后端 API
 │   ├── main.cpp         # Crow HTTP 框架 + MySQL Connector
-│   ├── CMakeLists.txt
-│   └── build/           # 编译输出
-├── log_tail.py         # 日志监控脚本
-├── blog_visitor_log.txt     # 主访问日志 (自动生成)
-└── article_visitor_log.txt # 文章访问日志 (自动生成)
+│   └── CMakeLists.txt   # 构建配置
+└── config/              # 配置文件备份 (已迁移到 MySQL)
 ```
+
+**Git 仓库**: https://github.com/noobyangzzz/Personal-blog
 
 ## 技术栈
 
@@ -106,11 +107,17 @@ python3 /home/yang/blog/log_tail.py
 ## 常用命令
 
 ```bash
+# 编译后端 API
+cd /home/yang/blog/backend
+mkdir -p build && cd build
+cmake ..
+make -j4
+
+# 启动后端 API
+./blog_api
+
 # 重启 Nginx
 kill -HUP $(cat /home/yang/nginx-1.16.1/logs/nginx.pid)
-
-# 启动/重启后端 API
-cd /home/yang/blog/backend/build && ./blog_api
 
 # 重启日志监控
 pkill -f log_tail.py && python3 /home/yang/blog/log_tail.py &
