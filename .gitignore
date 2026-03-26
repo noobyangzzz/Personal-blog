@@ -12,6 +12,7 @@ Thumbs.db
 # IDE
 .idea/
 .vscode/
+.claude/
 *.swp
 *.swo
 
@@ -28,3 +29,7 @@ env/
 node_modules/
 npm-debug.log
 yarn-debug.log
+
+# C++ build artifacts
+backend/build/
+backend/crow_install/

@@ -1,10 +1,9 @@
-// Blog App - Modular JavaScript
-// Sections and articles loaded from config files
+// Blog App - Data loaded from MySQL via API
 
 class BlogApp {
     constructor() {
         this.sections = [];
-        this.articles = {};
+        this.articles = {};  // sectionSlug -> array of articles
         this.currentSection = null;
         this.currentArticle = null;
         this.init();
@@ -20,9 +19,13 @@ class BlogApp {
 
     async loadSections() {
         try {
-            const response = await fetch('config/sections.json');
-            const data = await response.json();
-            this.sections = data.sections;
+            const response = await fetch('/api/sections');
+            if (response.ok) {
+                this.sections = await response.json();
+            } else {
+                console.error('Failed to load sections:', response.status);
+                this.sections = [];
+            }
         } catch (error) {
             console.error('Failed to load sections:', error);
             this.sections = [];
@@ -30,44 +33,42 @@ class BlogApp {
     }
 
     async loadAllArticles() {
-        // Load articles for each section
-        for (const section of this.sections) {
-            try {
-                const response = await fetch(`config/articles_${section.id}.json`);
-                if (response.ok) {
-                    const data = await response.json();
-                    this.articles[section.id] = data.articles || [];
-                } else {
-                    this.articles[section.id] = this.getDefaultArticles(section.id);
+        try {
+            const response = await fetch('/api/articles');
+            if (response.ok) {
+                const articles = await response.json();
+                // Group articles by section
+                this.articles = {};
+                for (const article of articles) {
+                    if (!this.articles[article.section]) {
+                        this.articles[article.section] = [];
+                    }
+                    this.articles[article.section].push(article);
                 }
-            } catch (error) {
-                this.articles[section.id] = this.getDefaultArticles(section.id);
+            } else {
+                console.error('Failed to load articles:', response.status);
+                this.articles = {};
             }
+        } catch (error) {
+            console.error('Failed to load articles:', error);
+            this.articles = {};
         }
-        console.log('Articles loaded:', this.articles);
     }
 
-    getDefaultArticles(sectionId) {
-        const defaultArticles = {
-            tech: [
-                { id: 'tech-1', title: 'C++ muduo 网络库源码解析', excerpt: '深入分析 muduo 库的 Reactor 模式实现，了解事件循环、连接管理等核心机制。', content: '<p>muduo 是一个基于 Reactor 模式的 C++ 网络库。</p><p>Reactor 模式是一种事件驱动编程模型，核心是将 IO 操作和业务逻辑分离。</p>', date: '2026-03-20', author: 'noobyangzzz', views: 128 },
-                { id: 'tech-2', title: 'Nginx 反向代理实战', excerpt: '如何使用 Nginx 配置反向代理，实现负载均衡和动静分离。', content: '<p>Nginx 是高性能的 HTTP 服务器和反向代理服务器。</p>', date: '2026-03-15', author: 'noobyangzzz', views: 256 },
-                { id: 'tech-3', title: 'Redis 缓存设计模式', excerpt: '探讨常见的缓存穿透、缓存雪崩问题及其解决方案。', content: '<p>Redis 是高性能的键值存储数据库，广泛用于缓存场景。</p>', date: '2026-03-10', author: 'noobyangzzz', views: 189 }
-            ],
-            movie: [
-                { id: 'movie-1', title: '《盗梦空间》- 诺兰的梦境哲学', excerpt: '一层又一层的梦境，究竟什么是真实？', content: '<p>《盗梦空间》是克里斯托弗·诺兰于2010年执导的科幻电影。</p>', date: '2026-03-18', author: 'noobyangzzz', views: 342 },
-                { id: 'movie-2', title: '《星际穿越》- 科学与情感的交织', excerpt: '当星际旅行遇上父女情感', content: '<p>《星际穿越》是诺兰导演的另一部科幻巨作。</p>', date: '2026-03-12', author: 'noobyangzzz', views: 289 }
-            ],
-            music: [
-                { id: 'music-1', title: '久石让 - 天空之城钢琴曲', excerpt: '细腻的旋律，如同在云端漫步', content: '<p>《天空之城》是宫崎骏1986年的动画电影，久石让为其创作了经典配乐。</p>', date: '2026-03-16', author: 'noobyangzzz', views: 156 },
-                { id: 'music-2', title: '周杰伦 - 范特西时期的创新精神', excerpt: '回顾周杰伦如何用融合曲风重新定义了华语流行音乐', content: '<p>2001年，周杰伦发行了第二张专辑《范特西》，彻底改变了华语流行音乐的走向。</p>', date: '2026-03-08', author: 'noobyangzzz', views: 203 }
-            ]
-        };
-        return defaultArticles[sectionId] || [];
+    async loadArticleDetail(articleKey) {
+        try {
+            const response = await fetch(`/api/article?id=${articleKey}`);
+            if (response.ok) {
+                return await response.json();
+            }
+            return null;
+        } catch (error) {
+            console.error('Failed to load article detail:', error);
+            return null;
+        }
     }
 
     setupEventListeners() {
-        // Use event delegation for article clicks
         document.addEventListener('click', (e) => {
             const articleItem = e.target.closest('.article-item');
             if (articleItem && articleItem.dataset.articleId) {
@@ -76,7 +77,6 @@ class BlogApp {
             }
         });
 
-        // Handle browser back/forward
         window.addEventListener('popstate', (e) => {
             if (e.state && e.state.page) {
                 if (e.state.page === 'article' && e.state.articleId) {
@@ -96,7 +96,6 @@ class BlogApp {
             <a class="nav-link section-link" data-section="${section.id}">${section.name}</a>
         `).join('');
 
-        // Add click handlers
         dynamicNav.querySelectorAll('.section-link').forEach(link => {
             link.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -118,7 +117,6 @@ class BlogApp {
             </div>
         `).join('');
 
-        // Add click handlers to section cards
         wrapper.querySelectorAll('.section-card').forEach(card => {
             card.addEventListener('click', () => {
                 const sectionId = card.dataset.sectionId;
@@ -134,7 +132,6 @@ class BlogApp {
 
         this.currentSection = section;
 
-        // Update nav active state
         document.querySelectorAll('.nav-link').forEach(link => {
             link.classList.remove('active');
             if (link.dataset.section === sectionId) {
@@ -142,7 +139,6 @@ class BlogApp {
             }
         });
 
-        // Show content section, hide home and article
         document.getElementById('home-section').style.display = 'none';
         document.getElementById('sections-container').style.display = 'none';
         document.getElementById('content-section').style.display = 'block';
@@ -180,11 +176,10 @@ class BlogApp {
         `;
     }
 
-    showArticle(articleId) {
+    async showArticle(articleId) {
         console.log('showArticle called:', articleId);
-        console.log('Available articles:', this.articles);
 
-        // Find article in all sections
+        // Find article from cached data
         let article = null;
         let section = null;
         for (const sec of this.sections) {
@@ -196,8 +191,6 @@ class BlogApp {
             }
         }
 
-        console.log('Found article:', article, 'section:', section);
-
         if (!article || !section) {
             console.error('Article not found:', articleId);
             return;
@@ -205,23 +198,20 @@ class BlogApp {
 
         this.currentArticle = article;
 
-        // Update nav
         document.querySelectorAll('.nav-link').forEach(link => {
             link.classList.remove('active');
         });
 
-        // Show article section
         document.getElementById('home-section').style.display = 'none';
         document.getElementById('sections-container').style.display = 'none';
         document.getElementById('content-section').style.display = 'none';
         document.getElementById('article-section').style.display = 'block';
 
-        // Update back button
         document.getElementById('back-to-section').onclick = () => {
             history.back();
         };
 
-        // Render article
+        // Render article with cached data first
         const articleWrapper = document.getElementById('article-wrapper');
         articleWrapper.innerHTML = `
             <div class="article-detail">
@@ -230,38 +220,57 @@ class BlogApp {
                     <div class="article-detail-meta">
                         <span>发布于 ${article.date}</span> |
                         <span>作者: ${article.author}</span> |
-                        <span>阅读: ${article.views}</span>
+                        <span>阅读: <span id="article-views">${article.views}</span></span>
                     </div>
                 </div>
-                <div class="article-detail-content">
-                    ${article.content}
-                </div>
+                <div class="article-detail-content" id="article-content-loading">加载中...</div>
             </div>
         `;
 
-        // Log the visit
+        // Load article content from static HTML file
+        try {
+            const contentResponse = await fetch(`/${article.content_path}`);
+            if (contentResponse.ok) {
+                const contentHtml = await contentResponse.text();
+                document.getElementById('article-content-loading').innerHTML = contentHtml;
+            } else {
+                document.getElementById('article-content-loading').innerHTML = '<p>内容加载失败</p>';
+            }
+        } catch (error) {
+            console.error('Failed to load article content:', error);
+            document.getElementById('article-content-loading').innerHTML = '<p>内容加载失败</p>';
+        }
+
+        // Log the visit via API
         this.logVisit(articleId, section.id);
 
         history.pushState({page: 'article', articleId, sectionId: section.id}, '', `#article-${articleId}`);
     }
 
-    logVisit(articleId, sectionId) {
-        // Send log request to server
-        fetch(`/log?article=${articleId}&section=${sectionId}&t=${Date.now()}`, {
-            method: 'POST',
-            keepalive: true
-        }).catch(() => {});
+    async logVisit(articleId, sectionId) {
+        try {
+            await fetch(`/api/visit?article=${articleId}&section=${sectionId}`, {
+                method: 'POST',
+                keepalive: true
+            });
+            // Update view count in UI
+            const viewsEl = document.getElementById('article-views');
+            if (viewsEl) {
+                const currentViews = parseInt(viewsEl.textContent) || 0;
+                viewsEl.textContent = currentViews + 1;
+            }
+        } catch (error) {
+            console.error('Failed to log visit:', error);
+        }
     }
 
     showHome() {
-        // Update nav active state
         document.querySelectorAll('.nav-link').forEach(link => {
             link.classList.remove('active');
             const homeLink = document.querySelector('.nav-link[data-section="home"]');
             if (homeLink) homeLink.classList.add('active');
         });
 
-        // Show home section
         document.getElementById('home-section').style.display = 'block';
         document.getElementById('sections-container').style.display = 'block';
         document.getElementById('content-section').style.display = 'none';
@@ -273,8 +282,5 @@ class BlogApp {
     }
 }
 
-// Make showHome globally accessible
 window.showHome = () => window.blogApp?.showHome();
-
-// Initialize app
 window.blogApp = new BlogApp();
