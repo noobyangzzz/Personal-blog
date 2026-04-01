@@ -1,6 +1,6 @@
 # noobyangzzz's Blog
 
-个人博客，基于原生 HTML/CSS/JavaScript 构建，后端采用 C++ + MySQL。
+个人博客，前端采用 Vue 3 + Vue Router，后端采用 C++ + MySQL。
 
 ## 功能特点
 
@@ -13,31 +13,33 @@
 
 ## 技术栈
 
-- **前端**：原生 HTML5 + CSS3 + JavaScript (ES6+)
+- **前端框架**：Vue 3 + Vue Router 4
+- **前端原生**：HTML5 + CSS3 + JavaScript (ES6+)
 - **后端**：C++ (Crow HTTP framework)
 - **数据库**：MySQL 8.0
 - **服务器**：Nginx 1.16.1
+- **端口**：30000 (前端), 8080 (后端 API)
 
 ## 项目结构
 
 ```
 blog/
-├── index.html          # 主页
+├── index.html          # 单一入口 HTML (Vue 3 应用挂载点)
 ├── README.md           # 说明文档
 ├── CLAUDE.md           # AI 助手指南
 ├── css/
 │   └── style.css       # 样式文件
 ├── js/
-│   └── main.js         # 前端逻辑 (从 API 读取数据)
+│   └── main.js         # Vue 3 应用 (HomeView/SectionView/ArticleView)
 ├── article/            # 文章静态 HTML 内容
 │   ├── tech-1.html ~ tech-6.html
 │   ├── movie-1.html ~ movie-2.html
 │   └── music-1.html ~ music-2.html
 ├── drafts/             # 草稿目录 (Markdown/PDF)
 ├── backend/            # C++ 后端 API
-│   ├── main.cpp        # API 源码
+│   ├── main.cpp        # Crow HTTP 框架 + MySQL Connector
 │   └── CMakeLists.txt  # 构建配置
-└── config/             # 配置文件 (已迁移到 MySQL，保留备份)
+└── config/             # 配置文件备份 (已迁移到 MySQL)
 ```
 
 ## 快速部署
@@ -77,7 +79,7 @@ http://localhost:30000
 | 端点 | 用途 |
 |------|------|
 | `GET /api/sections` | 获取板块列表 |
-| `GET /api/articles?section=xxx` | 获取文章列表 |
+| `GET /api/articles` | 获取文章列表 |
 | `GET /api/article?id=xxx` | 获取文章详情 |
 | `POST /api/visit?article=xxx&section=xxx` | 记录访问 |
 
