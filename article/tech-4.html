@@ -1,0 +1,3600 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bagu Template - noobyangzzz</title>
+    <link rel="stylesheet" href="../css/style.css?v=20260325">
+</head>
+<body>
+    <header class="header">
+        <div class="container">
+            <h1 class="logo"><a href="../index.html">noobyangzzz</a></h1>
+            <nav class="nav">
+                <a href="../index.html" class="nav-link">首页</a>
+                <a href="../sections/tech.html" class="nav-link section-link">技术</a>
+                <a href="../sections/movie.html" class="nav-link section-link">电影</a>
+                <a href="../sections/music.html" class="nav-link section-link">音乐</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="main">
+        <section class="section content-section">
+            <div class="container">
+                <button class="back-btn" onclick="history.back()">← 返回技术</button>
+                <div class="article-detail">
+                    <div class="article-detail-header">
+                        <h1 class="article-detail-title">Bagu Template</h1>
+                        <div class="article-detail-meta">
+                            <span>发布于 2026-03-26</span> |
+                            <span>作者: noobyangzzz</span> |
+                            <span>阅读: 0</span>
+                        </div>
+                    </div>
+                    <div class="article-detail-content">
+                        #  进程在new一个对象的时候，分配的是物理内存还是虚拟内存？什么时候分配？分配的完整过程怎么样
+当进程new一个新的对象的时候，实际上不会马上分配物理内存，而是会分配虚拟内存。
+
+new的底层调用malloc,mallloc会调用更靠近内核态的ptmalloc，jemalloc,tcmalloc等（但仍然属于用户态）进行分配.
+
+接下来进入系统调用，会进行brk()或者mmap()，这取决于分配的大小。
+
++ 对于小块内存、堆的连续扩展，通常使用 `brk()`调整堆顶指针。
++ 对于大块内存（如超过 mmap 阈值，默认 128KB 或 256KB，因系统而异），通常使用 `mmap()`映射一块新的虚拟地址区域。
+
+但此时也只是通过brk or mmap向操作系统申请分配了一块虚拟地址空间，返回一个合法的虚拟地址空间，此时相当于进程获得了一段虚拟地址空间的使用权，但此时仍然没有真正映射到物理内存。 
+
+何时访问真正的物理内存？当我对这个new的对象进行第一次读/写的时候。此时通过虚拟地址来访问该对象，MMU负责查询页表，页面里面的PTE项有标记位，里面的标记位说明该此时物理内存的一些状态，例如次缺页（表明虚拟页已映射物理页，但页不在内存中，或页表未缓存），主缺页（虚拟页尚未映射到任何物理页）等。此时PTE就告诉MMU该虚拟页并没有映射到物理页，需要触发缺页异常。
+
+缺页异常会触发硬件中断，需要陷入到内核态来处理。此时需要这个缺页异常程序以下事情：1.从cpu寄存器中读取引起缺页的虚拟地址 2.从cpu上下文中找到是哪个进程发生了缺页，并做一些检查（例如检查虚拟地址是否合法，该虚拟地址是否落入到了某个vm_area_struct里），之后会根据pte状态决定处理方式，例如对于次缺页会从磁盘swap回内存，或刷新TLB；对于主缺页会分配一个新的物理页框，更新页表，建立映射。
+
+最后重新执行那条指令，成功访问物理内存。
+
+
+
+
+
+# 面试官问我，讲一下进程调度吧。
+注意在这里讲的是linux 的进程调度，对于linux，进程和线程都是task_struct
+
+以这样的层次这样回答：
+
+一、进程的结构体task_struct简略介绍
+
+linux里面每个进程都有一个task_struct，这个task_struct就是我们常说的进程描述符，Linux中线程和进程都是task_struct这个结构体，区别他们是否是进程还是线程，主要是看他们是否共享同一个用户虚拟空间。
+
+另外稍作补充，区分是内核线程还是用户进程，主要是看里面的mm_struct* mm是不是指向空，指空就是内核线程，否则就是用户进程。
+
+每个task_struct里面有着一些调度优先级的值，例如prio,static_prio,nolmal_prio,rt_prio，这几个值就代表着某个线程对应于哪个调度类，同时在该调度类里面的“分数”
+
+二、Linux的几个调度类
+
+Linux内核采用模块化的调度器设计，类似优先队列链表，实现多个调度类。linux里面有五个调度类,这些调度类像是一个优先级链表，从优先级从高到底分别为停机调度类，限期调度类，实时调度类，公平调度类，空闲调度类。这几个类等于是进程调度策略的一个模块化设计。每一个调度类它内在都维护了一个数据结构和有着对应的调度策略。
+
+三、调度过程详解
+
+当一个任务（其实对于linux来说，就是进程）的时间片用完，那么此时就需要保存当前任务的上下文，然后切换到下一个进程。对于下面要调度哪一个线程，则是按照上面所说的优先级调度类来做的。即先从停机调度类里找任务，然后到限期调度类，然后到实时调度类，然后到公平调度类，最后到空闲调度类。
+
+对于停机调度类，不需要任务队列，使用普通的数组这些就可以，因为通常这些任务是临时的，极其短暂的。其调度逻辑是不会被调度器主动调度，而是在系统有需要的时候发起中断，强制抢占所有当前任务，它仅供内核内部使用。
+
+对于限期调度类，其数据结构是一个优先队列（红黑树），对应的是dl_r1(deadline run queue)，它的排序依据是截止时间越早的任务优先级越高，对应着其调度逻辑就是最早截止时间优先
+
+对于实时调度类，其数据结构也是一个优先队列(红黑树)，对应的是rt_rq(realtime run queue)，它的调度逻辑是按照rt_prio来排序，数字越大优先级越高，针对分数相同的情况，有两种策略，分别为FIFO和时间片轮转。FIFO是指如果分数相同，取先入队列的一个；时间片轮转是，当两个任务分数相同，那么就为每个任务分配一个时间片，时间片用完就进入队列尾部。
+
+对于公平调度类，其数据结构也是一个优先队列(红黑树),对应(cfs_rq)，键值就是vruntime,cfs称为完全公平调度器，其核心思想是计算vruntime，vruntime是指虚拟进行时间，内部有一个公式进行计算。cfs会优先调度vruntime较小的任务，确保所有任务按比例分享CPU时间。调度过程为先检查cfs_rq里是否有任务，有的话就取出vruntime最小的，运行之后更新vruntime。cfs内在还有一个“公平份额”的机制，如果当任务运行时间超过公平份额，会被抢占，之后重新插入到红黑树
+
+空闲调度类，一般是上面的调度类都没有任务才会执行里面的任务
+
+上面所说的每个调度类的调度策略都是可以调的，在linux里面有对应的宏定义，例如FIFO就是 SCHED_FIFO
+
+
+
+# 在linux视角下的进程与线程的上下文切换
+一句话起：进程切换需要完整切换地址空间等全局资源，线程（同进程内）仅需要切换执行态，共享全局资源
+
+## 前置基础
+linux上下文切换的核心触发点事context_switch()函数 (kernel/shed/core.c) ，所有调度切换最终都会走到这个函数，其伪代码核心逻辑是
+
+```c
+context_switch(struct rq *rq,struct task_struct *prev,struct *next, struct rq_flags *rf){
+
+    prepare_task_switch(rq, prev, next); //切换前准备
+
+    //1.地址空间切换
+    switch_mm_irqs_off(prev->active_mm,next->mm,next);
+    //2.执行态上下文切换(寄存器、栈等，进程/线程都要做)
+    switch_to(prev,next,prev);
+    //3.切换后清理
+    finish_task_switch(prev) ;
+    
+    return rq;
+
+}
+```
+
+context_switch()的输入是prev和next,无论进程/线程,都是task_struct，差异就在switch_mm_irqs_off()和switch_to()执行逻辑里面
+
+
+
+## 进程上下文切换执行流程拆解
+### 1.地址空间切换 switch_mm_irqs_off
+```c
+void switch_mm_irqs_off(struct mm_struct *prev_mm, struct mm_struct *next_mm, struct task_struct *tsk)
+{
+    struct mm_struct *active_mm = this_cpu_read(cpu_tlbstate.active_mm);
+
+     if (prev_mm != next_mm) {
+        // 1. 保存prev的页表基址（CR3寄存器）、TLB（快表）状态
+        this_cpu_write(cpu_tlbstate.active_mm, next_mm);
+        // 2. 加载next的页表基址到CR3寄存器（MMU核心切换）
+        load_cr3(next_mm->pgd);
+        // 3. 刷新TLB（避免旧进程的虚拟地址映射残留）
+        tlb_flush_mm(next_mm);
+        // 4. 更新mm_struct的引用计数、CPU亲和性等
+        mmgrab(next_mm);
+        mmdrop(prev_mm);
+    }
+                                                
+
+}
+```
+
+切换CR3寄存器+刷新TLB是最大开销
+
+### 2.执行态切换 switch_to()
+汇编实现，目的是保存prev执行态信息，加载next的执行状态
+
+### 3.后续清理
+清理`prev`的资源（如若`prev`是进程且无线程运行，释放`mm_struct`引用），更新调度统计信息。
+
+
+
+## 以上是进程切换上下文的流程，那么线程呢？
+### 1.地址空间切换
+因为prev->mm == next->mm,此时就不需要CR3切换，不需要TLB刷新
+
+### 2.执行态切换
+同上
+
+### 3.后续清理
+因为同进程，`prev`的`mm_struct`无需释放（仍有其他线程使用），仅更新调度统计。
+
+| **维度** | 进程切换 | 线程切换 | 共性 |
+| :--- | :--- | :--- | :--- |
+| **地址空间切换** | 执行`switch_mm_irqs_off()`<br/>全逻辑：1. 切换 CR3 寄存器（页表基址）；2. 刷新 TLB；3. 更新`mm_struct`<br/>引用计数 | 跳过`switch_mm_irqs_off()`<br/>核心逻辑：仅更新`cpu`<br/>字段，无 CR3/TLB 操作 | - 均属于`context_switch()`<br/>触发；- 均需更新`task_struct`<br/>的`cpu`<br/>字段 |
+| **执行态切换** | 执行`switch_to()`<br/>完整汇编逻辑：保存 / 恢复`thread.sp`<br/>/`thread.ip`<br/>/ 通用寄存器 | 与进程切换完全相同的`switch_to()`<br/>逻辑 | 核心依赖`switch_to()`<br/>汇编实现，操作`task_struct->thread` |
+| **开销来源** | 主要开销：CR3 切换 + TLB 刷新（占 90% 以上）；次要开销：`mm_struct`<br/>引用计数更新 | 仅`switch_to()`<br/>的寄存器 / 栈切换开销（纳秒级） | 均有少量调度统计更新开销 |
+| **触发条件** | 跨进程的`task_struct`<br/>切换（如`prev->mm != next->mm`<br/>） | 同进程的`task_struct`<br/>切换（如`prev->mm == next->mm`<br/>） | 均由调度器触发（时间片耗尽、高优先级任务就绪等） |
+| **源码核心差异点** | `switch_mm_irqs_off()`<br/>执行`if (prev_mm != next_mm)`<br/>分支 | `switch_mm_irqs_off()`<br/>跳过该分支 | 最终都调用`context_switch()`<br/>→`switch_to()` |
+
+
+## 
+# 当我们在谈多进程与多线程的时候，我们在谈什么
+框架：1、基本定义 2、对比 3、多线程和多线程场景
+
+当我们在说进程的时候，常说是资源分配的基本单位，线程是CPU调度的基本单位。但这样的简单理解显然是不够的，操作系统对这两个概念区分开，本质上是为了给“资源集合”和“执行流”拆分开来，而进程和线程就是这样一个拆分的实例。进程可以理解成资源的容器，线程是使用这些容器中这些资源来执行任务的执行者。
+
+进程内有独立的资源集合，他有独立的**虚拟地址空间**、**独立文件系统**、独立**文件描述符表、信号处理信息**。这样设计的目的是为了提供隔离的执行环境。每个进程创建的时候，操作系统都会为其分配独立的资源集合，通过PCB记录所有资源的状态。（）
+
+而线程它仅仅拥有执行任务所需要的最小资源，独立的线程id，程序计数器，寄存器组，栈，TCB（线程控制块）。这些是执行流的必要信息。同一进程内线程共享进程的资源。这样设计的目的是快速切换执行流且切换开销尽可能小。
+
+二者进行对比的话，是从三个维度进行对比：
+
+①独占资源
+
+每个进程拥有独立的资源集合（内存、文件描述符、环境变量、信号处理器）
+
+线程共享进程资源，线程有栈、程序计数器、tcb等
+
+②切换的上下文开销，创建和销毁的开销对比：
+
+进程切换的时候，需要切换完整资源的上下文，例如文件描述符表、信号处理规则，其中切换的主要开销是在虚拟地址空间的切换上。TLB（CPU用来缓存虚拟地址和物理地址映射的高速缓存）会全部失效，因为此时TLB缓存的是上一个进程的地址映射，对新的进程会完全失效。另外还有一个重要的切换开销是，很有可能切换的两个进程的数据和指令集不同，这就会导致L1 L2 L3缓存中的大部分内容失效。新的进程需要重新从主存中加载数据和指令，这就导致了大量的缓存未命中现象，也是所说的cpu缓存污染。
+
+线程切换的时候，由于两个线程共享进程内的地址空间，他们的切换只需要保存上一个进程的寄存器、内核栈状态，并恢复下一个线程的寄存器和内核栈状态。切换完之后能够知道,TLB和CPU缓存都是仍然有效的。
+
+③健壮性
+
+进程与进程之间，资源是完全隔离的。当一个进程崩溃（例如内存越界），不会影响其他进程
+
+线程与线程共享进程资源，一个线程崩溃（如栈溢出）会导致整个进程崩溃。
+
+（如果展开讲栈溢出）线程自己的栈，本质上是进程虚拟地址空间中一块被明确划分为归该线程的内存区域。而栈溢出的本质是：线程执行时，每次函数调用会将函数栈帧（包含参数、返回地址、局部变量）压入栈中，栈顶指针随之向下移动。函数返回的时候，栈帧弹出，栈顶指针向上移动。栈溢出本质山就是线程的栈空间被耗尽后，栈顶指针继续向下移动，访问到了栈边界以外的内存区域。这个时候会发生“内存保护异常”（若再展开，栈顶指针向下移，要不就访问到其他线程的关键内存区域，或是进程地址空间内未分配的内存）这个时候就会陷入内核态，终止线程
+
+
+
+那么什么时候使用多进程多线程的呢？
+
+多进程：注重安全、隔离性需求
+
+例如nginx。nginx的核心定位是 高性能高可用的HTTP反向代理和负载均衡网关。其核心目标是7*24稳定运行，即使出现单个连接处理错误，也不影响整体服务。nginx的基本架构是单master进程+多worker进程，处理连接是在worker进程当中。那么为了达成高可用的目标，他就需要使用多进程，防止某个worker线程因为处理连接错误或者网络异常等问题崩溃后，整个nginx就崩溃。如果发生了崩溃，那么master会发立即拉起新的worker进程，使得达到其高可用的目标
+
+多线程：共享数据需求、考虑执行速率
+
+例如workflow,这是一个搜狗做的轻量级后端业务开发框架，主要目的是为了让开发者快速构建高并发后端服务。对于后端业务开发，多任务间共享资源的情况经常发生，例如数据库连接池。若使用多进程，那么就需要各种ipc来实现，但使用多线程架构，只需要设计好任务队列，考虑好线程安全就可以了。workflow的多线程架构设计就非常适合这种io密集+轻计算的后端场景
+
+
+
+多进程和多线程如何配合使用？
+
+多线程和多进程的配合，实际上就是考虑场景中的资源隔离和同一资源环境中的高效并发。进程负责“资源隔离”，线程负责“高效并发”
+
+例如在nginx架构中，早期nginx架构中仅仅是多进程架构（master+worker，worker为单线程），但随着万级并发连接的需求增加。于是在1.7.11版本引入了线程池技术，即每个worker内也是多线程的了。这样就做到了资源隔离（单worker宕机，不影响其他worker进程） 同时也做到了多核高效（worker内多线程处理io，增加了并发量）
+
+
+
+# 讲讲三个智能指针？如果让你实现，你怎么实现？
+指针管理面临的困境：
+
+1、野指针：指针未初始化，既不指向合法的内存空间，也没有使用 NULL/nullptr 初始化指针
+
+产生野指针场景：(1)指针未初始化 (2)指针指向的内存已经释放 (3) 指针指向局部对象，局部对象销毁后，没有delete
+
+2、资源已被释放，指针没有置空：此时就是悬浮指针
+
+3、没有释放资源，产生内存泄漏
+
+4、多次释放资源，程序崩溃
+
+
+
+
+
+auto_ptr被弃用原因：第一代智能指针，已被弃用。缺陷在：（1）auto_optr的复制和复制会强制转移所有权 (2) 不支持数组管理 (3)无法应用于容器和多线程场景 (4)c++11引入nullptr后，auto_ptr仍使用0表示空指针
+
+
+
+如何解决这些指针带来的困境？
+
+RAII思想：资源在对象构造函数中获取；资源在对象析构函数中释放；对象生命周期来管理资源生命周期
+
+智能指针就是这样，利用类的构造函数和析构函数管理资源
+
+
+
+
+
+## shared_ptr
+适用场景：(1)多个对象需要共享同一个动态对象 (2)管理长期存活的动态对象
+
+```cpp
+//手撕shared_ptr
+
+//要求：1、不考虑删除器和空间配置器
+//      2、不考虑弱引用
+//      3、考虑引用计数的线程安全
+//      4、提出测试用案例
+
+//列出实现的接口
+//1、构造函数
+//2、析构函数
+//3、拷贝构造函数
+//4、拷贝赋值运算符
+//5、移动构造函数
+//6、移动赋值运算符
+//7、解引用 箭头运算符
+//8、引用计数、原始指针、重置指针
+
+
+//数据成员细节：
+//1、空的  shared_ptr 大小为16字节
+//2、 std::atmoic<int> 引用计数
+
+
+//接口细节：
+//1.有参构造函数需要explicit，防止隐式转换
+//2.拷贝构造函数和拷贝赋值函数需要 const T& 常引用
+//3.移动构造函数和移动赋值运算符函数需要noexcept修饰
+//4.只读接口用const修饰
+//5.赋值运算符重载需要考虑自赋值检查
+
+
+//内存序细节：
+//1.fetch_add 采用 std::memory_order_relaxed
+//2.fetch_sub 采用 std::memory_order_acq_rel 因为涉及到读操作和写操作
+//3.use_count 采用 std::memory_order_acquire 因为涉及到读操作
+
+
+#pragma once    
+
+#include <iostream>
+#include <atomic>
+using namespace std;
+
+template <typename T>
+class shared_ptr {
+public:
+    shared_ptr()  : ptr_(nullptr) , ref_count_(nullptr) {}
+
+    //防止隐式转换
+    explicit shared_ptr(T* ptr) : ptr_(ptr) , ref_count_(ptr ? new std::atomic<std::size_t>(1) : nullptr) {}
+    
+    ~shared_ptr() {
+        release();
+    }
+
+    shared_ptr(const shared_ptr<T>& other) : ptr_(other.ptr_) , ref_count_(other.ref_count_) {
+        if(ref_count_){
+            ref_count_->fetch_add(1,std::memory_order_relaxed);
+        }
+    }
+
+    shared_ptr<T>& operator = (const shared_ptr<T>& other) {
+        if (this!=other) {
+            release();
+            ptr_ = other.ptr_;
+            ref_count_ = other.ref_count_;
+            if(ref_count_){
+                ref_count_->fetch_add(1,std::memory_order_relaxed);
+            }
+        }
+        return *this;
+    }
+
+    // noexcept 表示不会抛出异常
+    // 编译器会生成更高效的代码，不需要为异常处理生成额外的代码
+    shared_ptr<T>(shared_ptr<T>&& other) noexcept : ptr_(other.ptr_) , ref_count_(other.ref_count_) {
+        other.ptr_ = nullptr;
+        other.ref_count_ = nullptr;
+    } 
+
+    shared_ptr<T>& operator = (shared_ptr<T>&& other) noexcept {
+        if (this!=other) {
+            release();
+            ptr_ = other.ptr_;
+            ref_count_ = other.ref_count_;
+            other.ptr_ = nullptr;
+            other.ref_count_ = nullptr;
+        }
+        return *this;
+    }
+
+    T& operator*() const {
+        return *ptr_;
+    }
+
+    T& operator->() const {
+        return ptr_;
+    }
+
+    std::size_t use_count() const {
+        return ref_count_ ? ref_count_->load(std::memory_order_acquire) : 0;
+    }
+
+    T* get() const {
+        return ptr_;
+    }
+
+    void reset(T* p = nullptr){
+        release();
+        ptr_ = p;
+        ref_count_ = p ? new std::atomic<std::size_t>(1) : nullptr;
+    }
+
+
+private:
+    void release()  {
+        if (ref_count_ && ref_count_->fetch_sub(1,std::memory_order_acq_rel) == 1) {
+            delete ref_count_;
+            delete ptr_;
+        }
+    }
+    T* ptr_;
+    atomic<std::size_t>* ref_count_;//这里是指向原子变量的指针
+};
+
+
+注意点：
+1、release 放在 private里面，防止用户提前释放资源
+
+2、拷贝赋值和移动复制的时候需要做自赋值检查。如果自己赋值自己，代码会执行release,
+    然后导致ptr_和ref_count被释放，然后又试图从other获取，会导致未定义行为
+
+3、拷贝赋值和拷贝构造的时候 需要用const修饰：因为拷贝操作的目的是复制源对象的。
+    const修饰是为了保证other在拷贝过程中不会被意外修改
+
+4、操作符重载  get、use_count 都是const修饰接口 表明不可修改类中对象
+
+5、内存序选择：
+    拷贝构造	和 拷贝赋值的时候 fetch_add 使用 relax 因为 依赖性不强，不许保证强的顺序
+    release 中 用 fetch_sub 用acq_rel 原因是fetch_sub 是 “释放资源” 的关键操作，
+     需要与其他线程的操作同步，避免出现 “对象已删除但其他线程仍在访问” 的情况。
+    get_count用acquire 获取最新值
+```
+
+语义是共享所有权，资源没有明确的所有者（有拷贝构造，有拷贝赋值，有提供移动构造）
+
+原理是引用计数
+
+使用时候的注意事项：
+
++ 使用shared_ptr来管理动态资源的时候，不要使用原来的裸指针
+    - 构造指针的时候不要暴露裸指针
+    - 尽量使用make_shared来构造智能指针
+    - 尽量不要使用get操作
+    - 不要用一个指针构造多个智能指针对象
+
+```cpp
+int main{
+	int *p =new int();
+    shared_ptr<int> sp = shared_ptr<int> p ; // 错！
+    shared_ptr<int> sp = shared_ptr<int>)(new int);//隐藏了裸指针 好
+    
+    shared_ptr<int> sp = make_shared<int>();  //使用make_shared来构造最好
+    return 0;
+} 
+```
+
++ 当确实需要返回自身指针的时候
+
+class T : public enable_shared_from_this<T> 
+
+return shared_from_this();
+
+```cpp
+class T : public enable_shared_from_this<T> {
+public: 
+	shared_ptr<T> self() {
+    	return shared_from_this();
+    }
+}
+```
+
+如果直接返回
+
+```cpp
+//返回自己的情形
+class T {
+public: 
+	T* self() {
+    	return this;
+    }
+}
+
+//  下面这个也不行 不要用一个指针构造多个智能指针对象！
+class T {
+public: 
+	shared_ptr<T> self() {
+    	return shared_ptr<T>(this);
+    }
+}
+```
+
+
+
+
+
+shared_ptr里面的强引用和弱引用技术：
+
++ 强引用计数:记录着当前有多少个shared_ptr在共享者同一个对象的所有权；负责管理对象的生命周期
++ 若引用计数：记录着多少个weak_ptr在观察这个对象
+
+在创建时：创建新的控制块，将强引用计数初始化为1，弱引用计数初始化为0
+
+在拷贝时：使控制块的强引用计数+1
+
+在一个shared_ptr被销毁时，控制块强引用计数-1
+
+强引用计数减到0，调用对象的析构函数，但此时**控制块不会立即销毁**，会检查弱用计数，如果弱引用计数为0，那么说明没有weak_ptr在观察了，此时控制块可被销毁；如果弱引用计数大于，说明weak_ptr在观察。控制块会被保留，但其中管理的指针会被置空。这些weak_ptr继续尝试访问的时候，会发现对象不存在
+
+
+
+最后的一点：shared_ptr自身的生命周期管理是线程安全的；但其所管理的对象不是线程安全的，shared_ptr仅仅保证他对内存的管理是线程安全的，但他不保证多个线程同时访问其内部指向的原始对象时不会发生数据竞争
+
+## weak_ptr
+
+
+主要用来解决循环引用的问题
+
+循环引用现象
+
+```cpp
+class B;
+class A{
+public:
+	~A() {};
+    shared_ptr<B> spb;
+}
+
+class B{
+public:
+	~B() {};
+    shared_ptr<A> spa;
+}
+
+int main(){
+	shared_ptr<A> sp1 = make_shared<A>();
+    shared_ptr<B> sp2 = make_shared<B>();
+    sp1->spb =sp2;
+    sp2->spa =sp1;
+    return 0;
+}
+//离开作用域之后，都不会析构，因为此时引用计数为1
+```
+
+使用weak_ptr解决循环引用
+
+```cpp
+
+class B;
+class A{
+public:
+	~A() {};
+    weak_ptr<B> spb;
+}
+
+class B{
+public:
+	~B() {};
+    weak_ptr<A> spa;
+}
+
+int main(){
+	shared_ptr<A> sp1 = make_shared<A>();
+    shared_ptr<A> sp2 = make_shared<B>();
+    sp1->spb =sp2;
+    sp2->spa =sp1;
+    return 0;
+}
+```
+
+
+
+
+
+## unique_ptr 
+语义是独享所有权：没有拷贝构造，没有赋值运算符操作，仅提供了移动构造
+
+明确某一个对象只有一个拥有者
+
+使用规范：
+
+不支持拷贝，但是可以从函数中返回一个unique_ptr
+
+```cpp
+#include <iostream>
+#include <memory>
+
+struct T1 {
+    ~T1() { std::cout << "T1 object is destroyed." << std::endl; }
+};
+
+// 函数返回一个unique_ptr
+std::unique_ptr<T1> get_unique() {
+    std::cout << "Entering get_unique()." << std::endl;
+    std::unique_ptr<T1> up(new T1()); // 1. 在函数内部创建，up拥有对象
+
+    // 验证up在移动前非空
+    if (up) {
+        std::cout << "Inside function: up is not null." << std::endl;
+    }
+
+    std::cout << "Leaving get_unique()." << std::endl;
+    return up; // 2. 返回时，调用移动构造函数
+               //    将up的所有权转移给函数外部的接收者。
+               //    移动后，up变为nullptr。
+}
+
+int main() {
+    std::unique_ptr<T1> p = get_unique(); // 3. p接收了所有权
+
+    // 验证p成功接收了所有权
+    if (p) {
+        std::cout << "In main: p is not null." << std::endl;
+    }
+
+    std::cout << "Exiting main()." << std::endl;
+    return 0; // 4. p离开作用域，销毁它所拥有的T1对象。
+}
+
+
+//代码运行结果
+Entering get_unique().
+Inside function: up is not null.
+Leaving get_unique().
+In main: p is not null.
+Exiting main().
+T1 object is destroyed.
+    
+```
+
+可行原因：
+
+1、编译器优化
+
+2、移动构造
+
+
+
+## 项目中的智能指针运用
+### shared_ptr
+Tcpconnection会被mainloop和subloop同时访问：存在短暂的并发窗口，首先mainloop调用accept获取connfd，创建Tcpconnection（此时引用计数为1）;mainloop调用subLoop->queueLoop的时候，此时仍然持有；subloop被唤醒后，执行任务队列的注册连接操作，此处subloop获得Tcpconnection的shared_ptr（引用计数变2）
+
+还有在handleclose的时候，此时就需要share_from_this传递自身给对应的回调函数，要确保close的时候其他线程必须不再使用Tcpconnection
+
+
+
+
+
+多线程共享的日志系统
+
+### unique_ptr
++ Tcpconnection持有channel和socket，这两个由unique_ptr管理
++ Loop持有线程、poller实例
+
+### weak_ptr
+TcpSever需要持有连接列表，Tcpconnection也需要回调TcpServer；例如删除Tcpserver中的连接表
+
+TcpServer通过`**std::map<int, std::weak_ptr<TcpConnection>>**`**持有所有连接**
+
+
+
+# 编译器的返回值优化
+返回值优化(Return Value Optimizaiton,RVO) 
+
+它是C++编译器的一项优化技术，它允许编译器省略，有权跳过（或不执行）本应发生的拷贝构造函数或移动构造函数的调用，以及相应的临时对象的创建和销毁
+
+
+
+当没有开启编译器优化：
+
+1. 在函数内部创建一个局部对象。
+2. 函数返回时，调用该对象的**拷贝构造函数**，将其内容拷贝到一个**临时对象**中。
+3. 函数结束，局部对象被销毁。
+4. 调用方接收到这个临时对象，可能再将其拷贝到最终的目标对象中。
+5. 临时对象被销毁
+
+里面涉及两次拷贝（返回时调用拷贝构造，调用方再拷贝）和两次析构（局部对象析构，临时对象析构）
+
+
+
+RVO怎么办？
+
+两种方式：1、具名返回值优化 2、匿名返回值优化
+
+1、(nrvo)具名返回值优化：当函数返回一个具名的局部变量时进行的优化
+
+2、(rvo)匿名返回值优化：当函数返回一个临时创建的匿名对象时进行的优化
+
+
+
+```cpp
+#include <iostream>
+#include <string>
+
+struct MyObject {
+    MyObject() { std::cout << "Constructor" << std::endl; }
+    MyObject(const MyObject&) { std::cout << "Copy Constructor" << std::endl; }
+    MyObject(MyObject&&) noexcept { std::cout << "Move Constructor" << std::endl; }
+    ~MyObject() { std::cout << "Destructor" << std::endl; }
+};
+
+MyObject createObject() {
+    MyObject local_obj; // 1. 创建局部对象
+    std::cout << "Object created inside function." << std::endl;
+    return local_obj;   // 2. 返回局部对象
+}
+
+int main() {
+    std::cout << "Calling createObject..." << std::endl;
+    MyObject final_obj = createObject(); // 3. 接收返回值
+    std::cout << "Object received in main." << std::endl;
+}
+
+//编译命令
+g++ -fno-elide-constructors without_rvo_test.cc -o without_rvo_test
+
+//运行结果
+Calling createObject()
+Constructor
+Object created inside function
+Move Constructor
+Destructor
+Move Constructor
+Destructor
+Object received in main
+Destructor
+```
+
+没有RVO的整体过程:
+
+1. main调用createObject()  								输出Calling createObject()
+2. createObject 内部调用默认构造							输出Constructor
+3. 进入createObject第二行									输出Object created inside function
+4. local_obj是将亡值，调用移动构造函数到一个临时对象中			输出**Move Constructor**
+5. local_obj被销毁 										输出**Destructor**
+6. main中接受返回值，再次调用移动构造，移动到final_obj中		输出**Move Constructor**
+7. 然后销毁												输出**Destructor	**
+8. 程序结果 销毁final_obj									输出Destructor
+
+可以明显看见有两次移动构造，两次销毁（粗体）（最后一次是程序退出的销毁）
+
+
+
+有了RVO
+
+```cpp
+//输出结果
+Calling createObject()
+Constructor
+Object created inside function
+Object received in main
+Destructor
+
+```
+
+整体过程：
+
+1. main调用createObject()  								输出Calling createObject()
+2. 编译器发现总是返回一个具名的局部变量local_obj ，于是编译器决定，不在createObject的栈帧上创建local_obj，而是选择在main函数中的final_obj的内存位置构造他。当程序执行到MyObject final_obj = createObject(); 它实际上是在final_obj上调用了构造函数 输出Constructor
+3. 进入createObject第二行									输出Object created inside
+4. 最后程序退出
+
+
+
+对比看来：对象只发生了一次构造，0次构造和拷贝，完全没有中间步骤。
+
+
+
+## rvo 匿名返回值优化
+当函数返回一个匿名临时对象，编译器通过RVO直接在函数调用处的目标内存位置上构造该临时对象，从而避免临时对象的创建和拷贝
+
+```cpp
+#include <iostream>
+using namespace std;
+
+class A {
+public:
+    A() { cout << "构造函数\n"; }
+    A(const A&) { cout << "拷贝构造函数\n"; }
+    ~A() { cout << "析构函数\n"; }
+};
+
+A createA() {
+    return A(); // 返回匿名临时对象（无名字）
+}
+
+int main() {
+    A obj = createA();
+    return 0;
+}
+
+编译器发现返回的总是一个匿名对象，就直接在obj的内存地址上构造匿名对象，跳过所有拷贝
+```
+
+
+
+## NRVO 具名返回值优化
+当函数返回具名局部变量（有名字的局部变量）时，编译器直接NRVO直接在函数调用处的目标对象内存位置上构造该局部对象，避免拷贝
+
+```cpp
+#include <iostream>
+using namespace std;
+
+class MyClass {
+public:
+    MyClass() { cout << "默认构造\n"; }
+    MyClass(const MyClass&) { cout << "拷贝构造\n"; }
+    ~MyClass() { cout << "析构\n"; }
+};
+
+// 返回具名局部对象
+MyClass createObject() {
+    MyClass obj; // 具名对象：有变量名 obj
+    return obj;  // 返回该具名对象
+}
+
+int main() {
+    MyClass result = createObject();
+    return 0;
+}
+```
+
+
+
+# 请你聊聊多态？动态多态
+多态是什么？核心就是：一个接口，多种实现，即通过统一的基类接口，调用不同派生类对象的具体实现
+
+多态分为两种：
+
+静态多态：在编译时确定调用。通过函数重载来实现，由编译器中确定具体实现。
+
+函数重载：允许在同一个作用域中声明多个功能类似的同名函数；这些函数的参数列表、参数个数或者参数类型或参数顺序不一样；注意：不能通过返回值类型来区别重载
+
+原理就是通过函数名修饰。~~~~
+
+代码执行要有四个步骤
+
++ 预处理：把头文件当中的函数声明拷贝到源文件中，避免编译过程中的语法分析找不到函数定义
++ 编译：语法分析，进行符号汇总（函数名）
++ 汇编：生成函数名到函数地址的映射，方便之后通过函数名找到函数定义位置，从而执行函数
++ 链接：将多个文件中的符号表汇总合并
+
+本质原理就是在汇编的时候生成不同的函数名，从而定位到不同的具体函数实现
+
+
+
+动态多态：
+
+是指虚函数重写，是在运行时确定的
+
+虚函数重写：在基类的函数前加上virtual关键字，在派生类重写该函数；运行时将会根据对象的类型来调用相应的函数；如果对象的类型是基类，则调用基类的函数；如果对象的类型是派生类，则调用派生类的函数
+
+对于动态多态来说，主要依赖的机制是虚函数表和虚函数表指针。
+
+虚函数表是指：当一个类包含至少一个虚函数， 编译器会为该类生成一个虚表，编译器会为该类生成一个虚函数表（全局唯一，所有该类对象共享）；虚表的本质是“函数指针数组”，数组中的每个元素存储该类中的虚函数地址（包括从基类继承的虚函数，以及自身重写的虚函数）；若派生类**重写**了基类的虚函数，会用派生类的虚函数地址 “覆盖” 虚表中对应位置的基类虚函数地址；若派生类**新增**了虚函数，会在虚表的末尾添加新增虚函数的地址。
+
+虚函数指针：每个包含虚函数的类的对象，都会隐含一个 “虚表指针（vptr）”（通常在对象内存布局的最开头）；当对象创建时，编译器会自动将vptr初始化为该对象所属类的虚表地址；虚函数指针的作用是运行时通过vptr找到对应的虚表调用的虚函数地址，最终执行函数
+
+
+
+**为什么是运行时确定？**
+
+因为在编译阶段，编译器发现makesound()是虚函数，且调用者是基类指针 animal*,因为无法确定具体调用哪个类的makesound()，只能生成通过vptr查找虚表的中间代码：
+
+于是在运行阶段会做以下事情：
+
++ 第一步：通过基类指针`animalPtr1`，访问对象的 vptr（对象内存的首地址即为 vptr）；
++ 第二步：通过 vptr 找到`Dog`类的虚表；
++ 第三步：在虚表中找到`makeSound()`对应的函数指针（因`Dog`重写了该函数，指针指向`Dog::makeSound()`）；
++ 第四步：调用该函数指针指向的函数，执行`Dog::makeSound()`。
+
+
+
+**为什么我们会做基类指针指向子类对象？这样做不是很不规范吗？我都知道我的对象是子类了，但是我仍然要用基类指针，为什么不直接使用子类的指针呢？**
+
+这涉及到设计原则：高层模块不应该依赖于底层模块，两者都应该依赖于抽象。抽象不应该依赖于具体，具体应该依赖于抽象。
+
+高层：animal代码 低层：dog，cat 抽象：animal基类
+
+```cpp
+void playWithDog(Dog* dog) {
+    dog->makeSound();
+}
+
+void playWithCat(Cat* cat) {
+    cat->makeSound();
+}
+
+int main() {
+    Dog* dog = new Dog();
+    Cat* cat = new Cat();
+
+    playWithDog(dog);
+    playWithCat(cat);
+}
+```
+
+如果代码依赖于直接的dog和cat，那么每增加一个动物，都要重新写一个新的函数，例如playwithbird
+
+```cpp
+#include <vector>
+#include <iostream>
+
+int main() {
+    std::vector<Animal*> animals;
+    animals.push_back(new Dog());
+    animals.push_back(new Cat());
+    animals.push_back(new Bird());
+
+    // 一个循环，处理所有类型的动物
+    for (Animal* animal : animals) {
+        animal->makeSound(); // 多态发生！自动调用每个对象正确的方法
+    }
+
+    // 记得释放内存
+    for (Animal* animal : animals) {
+        delete animal;
+    }
+}
+```
+
+但如果用了基类指针，那么直接调playsound即可
+
+总结：为什么使用基类指针指向派生类对象
+
++ 解耦：让高层代码依赖于抽象的基类，而不是具体的派生类，降低了代码间的耦合度
++ 可扩展性：当需要添加新功能（新的派生类）时，已有的、依赖于基类的代码无需任何修改，就能自动支持新类型。
++ 实现多态：这是触发动态绑定的必要条件，使得 “一个接口，多种实现” 成为可能。
++ 创建通用代码：
++ 接口与实现分离：隐藏了复杂的实现细节，只暴露简洁、稳定的接口。
+
+
+
+# 请你聊聊TCP和UDP区别？（结合linux网络编程来讲）
+1. 连接
+
+TCP面向连接的，传输数据前需要先建立连接（三次握手）；UDP不需要连接即可传输数据
+
+在网络编程的时候，两者不仅仅是从sokcet的第二个参数不同（对于TCP，是int sockfd = socket(AF_INET, **SOCK_streamSTREAM**, 0);  对于UDP int sockfd = socket(AF_INET, SOCK_DGRAM, 0); ）
+
+对于TCP而言，其服务端需要socket() -> bind() -> listen() -> accept()；客户端则需要sokcet()->connect(); 而对于服务端而言，三次握手就发生在listen()到accept()的过程中，里面涉及到将连接从半连接队列到全连接队列的一个过程；后续用read write
+
+对于UDP,socket() -> bind()(可选); 后续直接sendto和receivefrom即可
+
+另外TCP需要在编程中处理连接的断开，以正常退出为例子，客户端调用close(),服务器read()返回0
+
+然而UDP并不存在连接断开的概念，只需要处理数据丢失；这个在应用层来处理，但是这不仅需要在应用层实现确认机制，还需要实现重传机制
+
+2. 服务对象
+
+TCP是一对一的，UDP可以一对多，多对多；
+
+3. 可靠性
+
+TCP有确认应答、重传机制、序号机制来确保传输的可靠性；UDP则只管发，不管是否传输到；
+
+4. 拥塞控制、流量控制
+
+TCP有流量控制，通过滑动窗口；拥塞控制： 通过”慢启动，拥塞避免，快速重传，快速回复“；udp没有
+
+5. 传输方式
+
+TCP有三次握手、四次挥手；确认重传拥塞控制也会消耗资源和延迟；UDP效率较高，头部开销小
+
+另外TCP传输的时候有粘包的问题；粘包问题的解决有三种方式：1、固定长度 2、分界符 3、 头部写好长度
+
+6. 分片策略不同
+
+基于MSS分片，TCP在建立连接时协商MSS，数据超过MSS由TCP层进行分片，接受方TCP层重组后交给应用层；基于MTU（最大传输单元）UDP 数据报超过 MTU 时由 IP 层分片，接收方 IP 层重组后交给 UDP 层（若任一分片丢失，整个数据报丢弃）。
+
+7. 端口连接：
+
+TCP一个端口可以对应多个连接（这里就可以讲io多路复用了）；一个UDP端口仅仅对一个fd
+
+
+
+
+
+# 你如何理解多线程编程？ 	
+我们在聊多线程编程的时候，主要分为三个部分：1、同步与互斥（锁的使用、锁的粒度控制） 2、 多线程环境下数据结构 3、池式结构
+
+## 同步与互斥
+在多线程的场景下，如何保证线程间有序，如何保证线程间的数据竞争不冲突，前者是同步，后者是互斥。
+
+同步指的是多个线程之间按照“信号/条件”的机制来协调执行顺序，确保线程按照预设的顺序有序执行。 场景有：生产者消费模型，主线程等待所有子线程执行完成后再退出
+
+互斥指的是多个线程对同一共享资源的访问具有排他性。同一时间只有一个线程访问某资源。场景：多线程并发同一个全局变量；多线程同时写入同一个文件
+
+解决同步问题：信号量、条件变量
+
+信号量：
+
+P操作：减操作， 如果计数器大于 0，则将其减 1 并继续执行；如果计数器为 0，则调用线程会被阻塞（休眠），直到计数器大于 0。  
+V操作：加操作；将计数器加 1。如果有线程因为 P 操作而被阻塞，那么其中一个会被唤醒。
+
+  
+ 
+
+解决互斥问题：自旋锁，互斥锁
+
+
+
+自旋锁伪代码
+
+```cpp
+typedef struct {
+    atomic_flag flag ;
+}spinlock_t;
+
+void spinlock_init(spinlock_t* lock) {
+    atomic_flag_clear(&lock->flag);
+}
+
+void spinlock_lock(spinlock_t *lock) {
+    while(atomic_flag_test_and_set(&lock->flag)) {   //尝试原子地设置标志位
+        //忙等待 
+        #ifdef __x86_64__
+        __asm__ __volatile__("pause");
+        #endif
+    }
+}
+
+void spinlock_unlock(spinlock_t *lock) {
+    atomic_flag_clear(&lock->flag);
+}
+```
+
+
+
+互斥锁伪代码
+
+```cpp
+#include <stdint.h>
+#include <atomic>
+#include <sys/syscall.h>
+#define FUTEX_WAIT 0
+typedef struct {
+    uint32_t state;
+}mutex_t;
+
+void mutex_init(mutex_t *m) {
+    m->state = 0;
+}
+
+void mutex_lock(mutex_t *m) {
+    while(1){
+        uint32_t old = __sync_val_compare_and_swap(&m->state, 0, 1);
+        if(old == 0) {
+            break;         //获取成功
+        }
+        //通过futex系统调用进入内核态休眠
+        syscall(SYS_futex, &m->state, FUTEX_WAIT, 1,NULL, NULL,0);
+    }
+}
+
+void mutex_unlock(mutex_t *m) {
+    m->state = 0;
+    //唤醒等待队列中的一个线程
+    syscall(SYS_futex, &m->state, FUTEX_WAKE, 1, NULL, NULL, 0);
+}
+```
+
+## futex机制详解
+基于futex机制：linux下，互斥锁 读写锁 条件变量 都是基于futex机制实现的
+
+futex是快速用户空间互斥体，增加在用户态原子检查来决定是否陷入内核进行等待（即在用户态中加入一个判断，是确定是否要陷入内核进行等待）
+
+当没有发生竞争（竞争：多个线程访问互斥体）时，将在用户空间快速完成任务，当竞争发生时，将通过系统调用进入内核处理
+
+系统调用syscall_futex:
+
+futex_wait操作:插入等待队列，挂起当前线程；如果设置了超时参数，创建定时任务，定时唤醒线程
+
+futex_wake操作:遍历等待队列，唤起等待线程
+
+
+
+<!-- 这是一张图片，ocr 内容为： -->
+![](https://cdn.nlark.com/yuque/0/2025/png/35552475/1748924359128-bfbb34a4-ec02-40ad-842e-2f0a8dcfa656.png)
+
+在 Linux 的 futex 实现中，**哈希桶的每个槽位（bucket）存储一个等待队列头，每个槽位内的链表存储等待该 futex 地址的所有线程的等待队列项**。
+
+<!-- 这是一张图片，ocr 内容为： -->
+![](https://cdn.nlark.com/yuque/0/2025/png/35552475/1748924554375-9b713d1e-acb6-4029-b96b-3ebfc61ecb93.png)
+
+<!-- 这是一张图片，ocr 内容为： -->
+![](https://cdn.nlark.com/yuque/0/2025/png/35552475/1748924567524-1321c43c-798e-4727-aad7-81e69cc5d58b.png)<!-- 这是一张图片，ocr 内容为： -->
+![](https://cdn.nlark.com/yuque/0/2025/png/35552475/1748924577208-02e68053-abbc-490f-ae68-31ed89809c5f.png)
+
+
+
+对于自旋锁和互斥锁，其区别：
+
+1. 等待策略：自旋锁用户态忙等待，互斥锁内核态休眠
+2. 是否有上下文切换：自旋锁不让出执行权，没有上下文切换；互斥锁有
+3. 适用场景：自旋锁适用于持锁时间短，互斥锁适用于持锁时间长（衡量持锁时间长短，用户态陷入到内核态+内核态回到用户态时间）
+
+
+
+锁的粒度控制
+
+## 多线程场景下的数据结构设计
+### 有锁队列
+线程池中的阻塞队列设计
+
+
+
+锁的局限：
+
+1、线程阻塞带来的切换
+
+2、死锁风险
+
+3、性能瓶颈，高并发场景下锁竞争激烈，吞吐量下降
+
+### 无锁队列（通过原子操作来实现）
+lock-free（无锁）与wait-free（无等待）
+
+二者区别：
+
+1. 进度上：lock-free要求至少一个线程成功，其他可能重试 ； wait-free要求所有线程必定成功，无重试
+2. 实现上：无锁依赖cas等原子操作，无等待exchange等原子操作
+
+
+
+对于SPSC：ringbuffer  wait_free 无等待
+
+```cpp
+
+#pragma once
+
+// SPSC
+#include <atomic>
+#include <cstddef>
+#include <type_traits>
+
+template<typename T, std::size_t Capacity>
+class RingBuffer
+{
+public:
+    static_assert(Capacity && !(Capacity & (Capacity - 1)), "Capacity must be power of 2");
+    RingBuffer() : read_(0), write_(0) {}
+
+    ~RingBuffer() {
+        std::size_t r = read_.load(std::memory_order_relaxed);
+        std::size_t w = write_.load(std::memory_order_relaxed);
+        while (r != w) {
+            reinterpret_cast<T *>(&buffer_[r])->~T();
+            r = (r + 1) & (Capacity - 1);
+        }
+    }
+
+    // 这里使用万能引用和完美转发，支持左值和右值
+    template<typename U>
+    bool Push(U && value) {
+        const std::size_t w = write_.load(std::memory_order_relaxed);
+        const std::size_t next_w = (w + 1) & (Capacity - 1);
+        // 检查缓冲区是否满
+        if (next_w == read_.load(std::memory_order_acquire)) {
+            return false;
+        }
+        new (&buffer_[w]) T(std::forward<U>(value));
+        write_.store(next_w, std::memory_order_release);
+        return true;
+    }
+
+    bool Pop(T & value) {
+        const std::size_t r = read_.load(std::memory_order_relaxed);
+        // 检查缓冲区是否空
+        if (r == write_.load(std::memory_order_acquire)) {
+            return false;
+        }
+
+        // 取出元素并析构
+        value = std::move(*reinterpret_cast<T *>(&buffer_[r]));
+        reinterpret_cast<T *>(&buffer_[r])->~T();
+        read_.store((r + 1) & (Capacity - 1), std::memory_order_release);
+        return true;
+    }
+
+    std::size_t Size() const {
+        const std::size_t r = read_.load(std::memory_order_acquire);
+        const std::size_t w = write_.load(std::memory_order_acquire);
+        return (w >= r) ? (w - r) : (Capacity - r + w);
+    }
+
+
+private:
+//cache line  64B
+    alignas(64) std::atomic<std::size_t> read_;
+    alignas(64) std::atomic<std::size_t> write_;
+    alignas(64) std::aligned_storage_t<sizeof(T), alignof(T)> buffer_[Capacity];  // 支持 pod 和 非 pod 类型
+};
+
+
+
+//实现细节
+1、支持POD和非POD类型：std::aligned_storage_t<sizeof(T), alignof(T)> 
+是一个模板类型，它能创建一块大小为 sizeof(T)、对齐要求为 alignof(T) 的原始内存块
+2、避免伪共享：
+伪共享：如果两个不同的线程频繁访问的变量恰好位于同一个缓存行内，就会发生伪共享。
+a.线程A修改write_，导致该缓存行在CPU A的缓存中变为脏
+b.缓存一致性协议会使其他CPU（如 CPU B）缓存中的同一个缓存失效
+c.线程b想要读取read，发现缓存行失效，必须从主内存或更高层级的缓存重新加载，带来延迟
+解决方案：alignas(64) 
+3.万能引用和完美转发
+问题：Push需要接受一个T类型对象。若按照值传递，就会带来一次额外的拷贝构造。
+如果按左值引用来传递，那么对于临时对象（右值）无法使用移动语义来避免拷贝。
+4.位运算代替除法运算
+a. Capacity是2的幂；
+b. index 做位与运算 ; index &(Capacity -1)的效果与index % Capacity 完全相同
+5.强转析构
+a. reinterpret_cast<T *>(&buffer_[r])->~T() 显式地调用其析构函数
+b. 析构整个buffer的时候，也是逐个析构
+6.内存序选择
+a. 线程加载自己的指针(生产者加载write_,消费者加载read_) 
+load 采用 std::memory_order_relaxed .因为spsc里只有各自线程可以修改指针
+b. 线程加载对方的指针(生产者加载read_，消费者加载write_)
+std::memory_order_acquire。这是为了获取对方之前操作的结果
+
+```
+
+基本实现：固定大小的数组+头尾索引 
+
+存储任意数据类型：pod+非pod
+
+FIFO类型：提供push和pop接口，用于生产消费模型
+
+spsc场景下线程安全：原子操作
+
+**性能优化：内存对齐，避免伪共享**
+
+****
+
+**具体实现注意的点：**
+
+Push修改write_，需要判满
+
+Pop修改read_，需要判空
+
+read_和write不可以放在同一个缓存行
+
+数组data_也不要和其他数据共享缓存行
+
+
+
+
+
+std::aligned_storage_t<sizeof(T), alignof(T)> 
+
+是c++标准库提供的模板类型，用于定义一个未初始化的内存块，能够存储大小和对齐要求的对象 
+
+未初始化，所以需要通过placement new在指定位置构造
+
+
+
+取模运算的时候 优化为位运算
+
+首先capacity需要设定为2的n次幂
+
+将next = (curr + 1) % Capacity 优化为 next = (curr + 1) & (Capacity -1)
+
+### 如何向面试官阐述伪共享的这个问题
+<!-- 这是一张图片，ocr 内容为： -->
+![](https://cdn.nlark.com/yuque/0/2025/png/35552475/1759999776074-ca34d70c-db79-4784-83cc-f9e9762898e8.png)
+
+表现：cpu缓存是以缓存行（cache line） 为单位加载数据的
+
+线程1修改A或线程2修改B都会造成缓存行标记为脏
+
+CPU通过缓存一致性协议将脏缓存行同步到其他核心
+
+问题：
+
+A和B 没有数据竞争
+
+解决：
+
+通过内存对齐 将A和B 放在不同缓存行
+
+编程实现<!-- 这是一张图片，ocr 内容为： -->
+![](https://cdn.nlark.com/yuque/0/2025/png/35552475/1759999943200-192134d5-f46a-4d76-9501-0779c3111449.png)
+
+
+
+
+
+
+
+
+
+mpsc:
+
+```cpp
+
+#ifndef _MARK_MPSC_QUEUE_H
+#define _MARK_MPSC_QUEUE_H
+
+#include <atomic>
+#include <utility>
+
+template<typename T>
+class MPSCQueueNonIntrusive
+{
+public:
+    MPSCQueueNonIntrusive() : _head(new Node()), _tail(_head.load(std::memory_order_relaxed))
+    {
+        Node* front = _head.load(std::memory_order_relaxed);
+        front->Next.store(nullptr, std::memory_order_relaxed);
+    }
+
+    ~MPSCQueueNonIntrusive()
+    {
+        T* output;
+        while (Dequeue(output))
+            delete output;
+
+        Node* front = _head.load(std::memory_order_relaxed);
+        delete front;
+    }
+
+    void Enqueue(T* input)
+    {
+        Node* node = new Node(input);
+        Node* prevHead = _head.exchange(node, std::memory_order_acq_rel);
+        prevHead->Next.store(node, std::memory_order_release);
+    }
+
+    bool Dequeue(T*& result)
+    {
+        Node* tail = _tail.load(std::memory_order_relaxed);
+        Node* next = tail->Next.load(std::memory_order_acquire);
+        if (!next)
+            return false;
+
+        result = next->Data;
+        _tail.store(next, std::memory_order_release);
+        delete tail;
+        return true;
+    }
+
+private:
+    struct Node
+    {
+        Node() = default;
+        explicit Node(T* data) : Data(data)
+        {
+            Next.store(nullptr, std::memory_order_relaxed);
+        }
+
+        T* Data;
+        std::atomic<Node*> Next;
+    };
+
+    std::atomic<Node*> _head;
+    std::atomic<Node*> _tail;
+
+    MPSCQueueNonIntrusive(MPSCQueueNonIntrusive const&) = delete;
+    MPSCQueueNonIntrusive& operator=(MPSCQueueNonIntrusive const&) = delete;
+};
+
+template<typename T, std::atomic<T*> T::* IntrusiveLink>
+class MPSCQueueIntrusive
+{
+public:
+    MPSCQueueIntrusive() : _dummyPtr(reinterpret_cast<T*>(std::addressof(_dummy))), _head(_dummyPtr), _tail(_dummyPtr)
+    {
+        // _dummy is constructed from aligned_storage and is intentionally left uninitialized (it might not be default constructible)
+        // so we init only its IntrusiveLink here
+        std::atomic<T*>* dummyNext = new (&(_dummyPtr->*IntrusiveLink)) std::atomic<T*>();
+        dummyNext->store(nullptr, std::memory_order_relaxed);
+    }
+
+    ~MPSCQueueIntrusive()
+    {
+        T* output;
+        while (Dequeue(output))
+            delete output;
+    }
+
+    void Enqueue(T* input)
+    {
+        (input->*IntrusiveLink).store(nullptr, std::memory_order_release);
+        T* prevHead = _head.exchange(input, std::memory_order_acq_rel);
+        (prevHead->*IntrusiveLink).store(input, std::memory_order_release);
+    }
+
+    bool Dequeue(T*& result)
+    {
+        T* tail = _tail.load(std::memory_order_relaxed);
+        T* next = (tail->*IntrusiveLink).load(std::memory_order_acquire);
+        if (tail == _dummyPtr)
+        {
+            if (!next)
+                return false;
+
+            _tail.store(next, std::memory_order_release);
+            tail = next;
+            next = (next->*IntrusiveLink).load(std::memory_order_acquire);
+        }
+
+        if (next)
+        {
+            _tail.store(next, std::memory_order_release);
+            result = tail;
+            return true;
+        }
+
+        T* head = _head.load(std::memory_order_acquire);
+        if (tail != head)
+            return false;
+
+        Enqueue(_dummyPtr);
+        next = (tail->*IntrusiveLink).load(std::memory_order_acquire);
+        if (next)
+        {
+            _tail.store(next, std::memory_order_release);
+            result = tail;
+            return true;
+        }
+        return false;
+    }
+
+private:
+    std::aligned_storage_t<sizeof(T), alignof(T)> _dummy;
+    T* _dummyPtr;
+    std::atomic<T*> _head;
+    std::atomic<T*> _tail;
+
+    MPSCQueueIntrusive(MPSCQueueIntrusive const&) = delete;
+    MPSCQueueIntrusive& operator=(MPSCQueueIntrusive const&) = delete;
+};
+
+template<typename T, std::atomic<T*> T::* IntrusiveLink = nullptr>
+using MPSCQueue = std::conditional_t<IntrusiveLink != nullptr, MPSCQueueIntrusive<T, IntrusiveLink>, MPSCQueueNonIntrusive<T>>;
+
+#endif // MPSCQueue_h__
+
+
+
+```
+
+
+
+代码特点
+
+1. 分为侵入式和非侵入式；同时提供
+
+非侵入式队列中：用户数据本身不包含任何队列相关的字段
+
+```cpp
+非侵入式
+// 队列内部定义的“容器节点”，专门用来包裹用户数据
+struct Node {
+    T* Data;                  // 指向用户数据（数据本身不含链接信息）
+    std::atomic<Node*> Next;  // 队列自己的链接指针（用于串联节点）
+};
+
+struct MyIntrusiveData {
+    int id;
+    std::string name;
+    std::atomic<MyIntrusiveData*> next;  // 自带的链接字段（给队列用的）
+};
+
+非侵入式实例：
+MPSCQueueNonIntrusive<MyData> queue1, queue2;
+
+侵入式
+侵入式队列的模板参数：要求传入数据自带的链路字段指针
+队列不创建额外的容器节点，直接通过数据自带的这个字段实现链接。
+template<typename T, std::atomic<T*> T::* IntrusiveLink>
+class MPSCQueueIntrusive { ... };
+
+// 用户数据：必须包含队列需要的链接字段（std::atomic<T*>）
+struct MyIntrusiveData {
+    int id;
+    std::string name;
+    std::atomic<MyIntrusiveData*> next;  // 自带的链接字段（给队列用的）
+};
+侵入式实例：
+struct MultiQueueData {
+    int id;
+    std::atomic<MultiQueueData*> next_for_queue1;  // 给队列1的链接
+    std::atomic<MultiQueueData*> next_for_queue2;  // 给队列2的链接
+};
+
+// 创建两个独立的侵入式队列，分别用不同的链接字段
+MPSCQueueIntrusive<MultiQueueData, &MultiQueueData::next_for_queue1> queue1;
+MPSCQueueIntrusive<MultiQueueData, &MultiQueueData::next_for_queue2> queue2;
+
+
+
+```
+
+2. 模板元编程的多态绝佳案例 
+
+```cpp
+using MPSCQueue = std::conditional_t<IntrusiveLink != nullptr, 
+            MPSCQueueIntrusive<T, IntrusiveLink>, MPSCQueueNonIntrusive<T>>;
+分析：
+std::conditional_t<条件, 类型A, 类型B> 
+工作原理：在代码编译时，编译器会检查 条件 是否为真。
+如果 条件 为 true，那么 std::conditional_t 就会被替换为 类型A。
+如果 条件 为 false，那么 std::conditional_t 就会被替换为 类型B。
+```
+
+3. Enqueue 多生产者入队，Dequeue单消费者出队
+
+采用头插法：1.初始化的时候head和tail都指向dummyNode 2.插入新节点A时，此时head.exchange，使得head取得新节点，然后dummy的next指向A 3.插入新节点B时，继续头插，head.exchange,head指向B,然后A的next指向B 4.出队  消费者拿到tail，之后取next，再移动tail，释放dummy 
+
+<!-- 这是一张图片，ocr 内容为： -->
+![](https://cdn.nlark.com/yuque/0/2025/png/35552475/1760263596498-66f9caff-3413-4951-95fe-d32d8071ffda.png)
+
+4. 内存序的选择
+
+生产者之间只竞争_head
+
+消费者独自拥有_tail，通过tail->next发现这个新节点
+
++ 生产者与生产者之间的同步:
+
+```cpp
+入队
+void Enqueue(T* input) {
+    Node* node = new Node(input); // 1. 创建新节点
+    Node* prevHead = _head.exchange(node, std::memory_order_acq_rel); // 2. 原子交换
+    prevHead->Next.store(node, std::memory_order_release); // 3. 链接节点
+}
+通过std::memory_order_acq_rel,保证了新head对其他生产者可见(release)，
+并且，因为exchange会返回旧的head，所以通过acquire，可以获取别的生产者修改的head值
+当把新节点链接到队列末尾的时候，使用release。表示对消费者可见
+
+bool Dequeue(T*& result) {
+    Node* tail = _tail.load(std::memory_order_relaxed); // 1. 读取尾指针
+    Node* next = tail->Next.load(std::memory_order_acquire); // 2. 读取下一个节点
+    if (!next)
+        return false;
+
+    result = next->Data; // 3. 读取数据
+    _tail.store(next, std::memory_order_release); // 4. 更新尾指针
+    delete tail; // 5. 删除旧节点
+    return true;
+}
+出队获取的时候，因为只有单消费者，所以只需要用relaxed，但是读取下一个节点的时候
+要用require
+```
+
+
+
+# volatile 内存屏障 原子操作的关系
+首先我们要搞清楚一个问题，这几个概念是基于什么问题来进行讨论的
+
+单核时代，程序执行是串行的，不必考虑指令的执行顺序的问题。
+
+但是**多核**时代，程序的执行就会变得复杂了。
+
+**多核CPU缓存存在的可见性问题：**每个核心都有自己的L1 L2 L3 缓存，当一个核心修改了他缓存当中的数据时，这个修改不会立即同步到主内存，其他核心也就看不到这个变化。
+
+**指令重排序带来的顺序性问题：**cpu和编译器可能会在不改变单线程程序最终结果的前提下，打乱指令执行的顺序。在多线程环境下，这样可能会导致线程间看到的操作顺序和代码中的顺序不一致。
+
+
+
+volatile、内存屏障、内存序、原子操作都是为了解决多核环境下的“可见性” “顺序性” 问题的
+
+## 内存屏障
+Load Barrier(读屏障)：屏障后的读，必须等到屏障前的读操作完成后才进行；强制让CPU缓存中数据与主内存同步，确保读到最新值。
+
+Store Barrier(写屏障):屏障之前的写，必须要在屏障之后的写操作开始之前完成。强制刷主存
+
+Full Barrier(全屏障)：具有读屏障和写屏障的全部功能
+
+
+
+一般用于需要精确控制指令的执行顺序，但直接使用内存屏障是一件比较困难的事
+
+## 内存序
+并非所有的并发场景都需要最强的同步保证，c++11引入的概念，根据需求选择不同强度的同步规则
+
+是作用在原子操作的参数
+
+五种内存序：
+
+| 内存序 | 名称 | 含义 | 可见性 | 顺序性 |
+| --- | --- | --- | --- | --- |
+| std::memory_order_relax | 松散内存序 | 只用来保证对原子对象的操作是原子的，不保证顺序 | 不一定可见 | 编译器安排顺序 |
+| std::memory_order_acquire | 获得内存序 | 在读取某原子对象时，当前线程的任何后面的读写操作都不允许重排到这个操作前面去；并且其他线程对同一个原子对象释放之前的所有内存写入都在当前线程可见 | 拿到最新值 | 下面的代码不能优化到上面去 |
+| std::memory_order_release | 释放内存序 | 在写入某原子对象时，当前线程的任何前面的读写操作都不允许重排到这个操作后面；同时当前线程的所有内存写都对同一个原子进行获取的其他线程可见 | 刷到主存去，其他线程可见 | 上面的代码不能优化到下面去 |
+| std::memory_order_acq_rel | 获取-释放内存序 | 前后的任何读写操作都不允许重排，并且其他线程对同一个原子对象释放之前的所有内存都在当前线程可见 | 可见 | 上下不能跨 |
+| std::memory_order_seq_cst | 顺序一致序 | 全都不许变；保证了多个原子变量的操作在所有线程里观察到的操作顺序相同 | 可见 | 所有都不能排序 |
+
+
+
+
+### 原子操作
+保证一组指令不可中断；
+
+常用语需要实现无锁编程的场景
+
+
+
+
+
+### volatile
+是一个类型修饰符，它向编译器发出一个 “警告”：“这个变量可能会在你的控制流之外被改变（例如，被硬件、其他线程、信号处理器等），所以请不要对它进行任何优化，每次都老老实实地去内存里读取它的值。”
+
+解决的问题：可见性问题；防止编译器优化
+
+但他不保证原子性
+
+
+
+
+
+# 网络框架
+## reactor 三大核心模块
+### channel类
+Channel类则封装了一个 [fd] 和这个 [fd感兴趣事件] 以及事件监听器监听到 [该fd实际发生的事件]。同时Channel类还提供了**设置**该fd的感兴趣事件，以及将该fd及其感兴趣事件**注册**到事件监听器或从事件监听器上**移除**，以及**保存**了该fd的每种事件对应的处理函数。
+
+主要成员变量和方法
+
+```cpp
+const int  fd_;
+int        events_;
+int        revents_; 
+EventLoop* loop_;
+ReadEventCallback readCallback_;
+EventCallback writeCallback_;
+EventCallback closeCallback_;
+EventCallback errorCallback_;
+
+
+各种事件的处理函数
+void setReadCallback(ReadEventCallback cb) {read_callback_ = std::move(cb);}
+void setWriteCallback(Eventcallback cb) {write_callback_ = std::move(cb);}
+void setCloseCallback(EventCallback cb) {close_callback_ = std::move(cb);}
+void setErrorCallback(EventCallback cb) {error_callback_ = std::move(cb);} 
+
+
+将Channel中的文件描述符及其感兴趣事件注册事件监听器上或从事件监听器上移除
+void enableReading() {events_ |= kReadEvent; upadte();}
+void disableReading() {events_ &= ~kReadEvent; update();}
+void enableWriting() {events_ |= kWriteEvent; update();}
+void disableWriting() {events_ &= ~kWriteEvent; update();}
+void disableAll() {events_ |= kNonEvent; update();}
+```
+
+### poller类
+一个poller就是一个监听器
+
+主要成员变量和方法
+
+```cpp
+EventLoop* ownerLoop_;
+typedef std::map<int, Channel*> ChannelMap;
+int epollfd_
+
+
+TimeStamp poll(int timeoutMs, ChannelList *activeChannels)
+```
+
+### EventLoop
+one loop per thread
+
+每个EventLoop对象都唯一绑定了一个线程，这个线程其实就在一直执行这个函数里面的while循环
+
+最重要的方法
+
+```cpp
+void EventLoop::loop()
+{ //EventLoop 所属线程执行
+    省略代码 省略代码 省略代码  
+    while(!quit_)
+    {
+        activeChannels_.clear();
+        pollReturnTime_ = poller_->poll(kPollTimeMs, &activeChannels_);//此时activeChannels已经填好了事件发生的channel
+        for(Channel *channel : activeChannels_)
+            channel->HandlerEvent(pollReturnTime_);
+        省略代码 省略代码 省略代码
+    }
+    LOG_INFO("EventLoop %p stop looping. \n", t_loopInThisThread);
+}
+```
+
+
+
+### 其他类
+#### Acceptor类
+```cpp
+EventLoop* loop_;
+Socket acceptSocket_;
+Channel acceptChannel_;
+NewConnectionCallback newConnectionCallback_;
+bool listening_;
+int idleFd_;
+```
+
+#### TcpConnection
+这个类**主要**封装了一个已建立的TCP连接，以及控制该TCP连接的方法（连接建立和关闭和销毁），以及该连接发生的各种事件（读/写/错误/连接）对应的处理函数，以及这个TCP连接的服务端和客户端的套接字地址信息等。
+
+```cpp
+EventLoop* loop_;
+StateE state_;  
+Buffer inputBuffer_;
+Buffer outputBuffer_;
+ConnectionCallback connectionCallback_;
+MessageCallback messageCallback_;
+WriteCompleteCallback writeCompleteCallback_;
+HighWaterMarkCallback highWaterMarkCallback_;
+std::unique_ptr<Socket> socket_;
+std::unique_ptr<Channel> channel_;
+```
+
+# 
+
+
+# 使用valgrind排查内存泄漏问题
+```cpp
+// leaky_app.cpp
+
+#include <iostream>
+#include <cstdlib> // 用于 malloc/free
+
+// 场景 1: 在函数中动态分配内存，但函数结束时没有释放
+void create_leak_1() {
+    std::cout << "场景 1: 函数内 new int 后未 delete。" << std::endl;
+    int* ptr = new int(42); // 分配一个整数
+    // 错误：没有 delete ptr;
+}
+
+// 场景 2: 使用 C 风格的 malloc 分配内存，但没有用 free 释放
+void create_leak_2() {
+    std::cout << "场景 2: C 风格 malloc 后未 free。" << std::endl;
+    char* buffer = (char*)malloc(100 * sizeof(char)); // 分配 100 字节的缓冲区
+    if (buffer != nullptr) {
+        buffer[0] = 'H';
+        // 错误：没有 free(buffer);
+    }
+}
+
+// 场景 3: 分配了一个数组，但只释放了单个元素（错误的释放方式）
+void create_leak_3() {
+    std::cout << "场景 3: new[] 分配的数组用 delete 释放（导致未定义行为和潜在泄漏）。" << std::endl;
+    int* array_ptr = new int[10]; // 分配一个包含 10 个整数的数组
+    // 错误：应该使用 delete[] array_ptr;
+    delete array_ptr; // 这是错误的，它只会调用第一个元素的析构函数（如果是对象的话）并释放部分内存
+}
+
+
+int main() {
+    std::cout << "--- 程序开始 ---" << std::endl;
+
+    create_leak_1();
+    create_leak_2();
+    create_leak_3();
+
+    std::cout << "--- 程序结束 ---" << std::endl;
+
+    return 0;
+}
+```
+
+create_leak1：没有delete ptr
+
+create_leak2 : 没有free(buffer)
+
+create_leak3: 没有完全删除数组array_ptr
+
+
+
+编译 g++ -g - o leaky_app leaku_app.cpp
+
+然后使用valgrind --leak-check=full ./leak.app
+
+
+
+然后输出日志
+
+```shell
+lqf@lqf2:~/review_for_autumn/valgrind$ valgrind --tool=memcheck --leak-check=full ./mem_leak_example 
+==236964== Memcheck, a memory error detector
+==236964== Copyright (C) 2002-2017, and GNU GPL'd, by Julian Seward et al.
+==236964== Using Valgrind-3.15.0 and LibVEX; rerun with -h for copyright info
+==236964== Command: ./mem_leak_example
+==236964== 
+--- 程序开始 ---
+场景 1: 函数内 new int 后未 delete。
+场景 2: C 风格 malloc 后未 free。
+场景 3: new[] 分配的数组用 delete 释放（导致未定义行为和潜在泄漏）。
+==236964== Mismatched free() / delete / delete []												//意味着释放内存的方式和分配内存的方式不匹配
+==236964==    at 0x483D1CF: operator delete(void*, unsigned long) (in /usr/lib/x86_64-linux-gnu/valgrind/vgpreload_memcheck-amd64-linux.so)
+==236964==    by 0x10931E: create_leak_3() (mem_leak_example.cpp:28)			//告诉我们出问题的代码在哪一行
+==236964==    by 0x109360: main (mem_leak_example.cpp:37)	
+==236964==  Address 0x4db01c0 is 0 bytes inside a block of size 40 alloc'
+==236964==    at 0x483C583: operator new[](unsigned long) (in /usr/lib/x86_64-linux-gnu/valgrind/vgpreload_memcheck-amd64-linux.so)
+==236964==    by 0x109304: create_leak_3() (mem_leak_example.cpp:26)
+==236964==    by 0x109360: main (mem_leak_example.cpp:37)
+==236964== 
+--- 程序结束 ---
+==236964== 
+==236964== HEAP SUMMARY:
+==236964==     in use at exit: 104 bytes in 2 blocks			//还有两个block共104字节没有释放
+==236964==   total heap usage: 5 allocs, 3 frees, 73,872 bytes allocated
+==236964== 		//程序进行了5次分配，但只释放了3次
+==236964== 4 bytes in 1 blocks are definitely lost in loss record 1 of 2		//definitely lost 明确的泄漏 泄漏4bytes
+==236964==    at 0x483BE63: operator new(unsigned long) (in /usr/lib/x86_64-linux-gnu/valgrind/vgpreload_memcheck-amd64-linux.so)			//new后没有delete
+==236964==    by 0x109266: create_leak_1() (mem_leak_example.cpp:9)
+==236964==    by 0x109356: main (mem_leak_example.cpp:35)
+==236964== definitely lost 明确的泄漏 泄漏4bytes
+==236964== 100 bytes in 1 blocks are definitely lost in loss record 2 of 2	//definitely lost 明确的泄漏 泄漏100bytes
+==236964==    at 0x483B7F3: malloc (in /usr/lib/x86_64-linux-gnu/valgrind/vgpreload_memcheck-amd64-linux.so)			//malloc后没有free
+==236964==    by 0x1092B1: create_leak_2() (mem_leak_example.cpp:16)
+==236964==    by 0x10935B: main (mem_leak_example.cpp:36)
+==236964== 
+==236964== LEAK SUMMARY:
+==236964==    definitely lost: 104 bytes in 2 blocks	//有104字节确定是释放了
+==236964==    indirectly lost: 0 bytes in 0 blocks
+==236964==      possibly lost: 0 bytes in 0 blocks
+==236964==    still reachable: 0 bytes in 0 blocks
+==236964==         suppressed: 0 bytes in 0 blocks
+==236964== 
+==236964== For lists of detected and suppressed errors, rerun with: -s
+==236964== ERROR SUMMARY: 3 errors from 3 contexts (suppressed: 0 from 0)
+```
+
+L22-L44 就是报告摘要
+
+HEAP SUMMARY:堆摘要   LEAK SUMMARY:泄露摘要 ERROR SUMMARY: 错误摘要
+
+
+
+
+
+# CAP理论
+C:Consistency 一致性
+
+A:Availability 可用性
+
+P:Partition tolerance 分区容忍性
+
+CAP理论：一个分布式系统不可能同时做到这三点
+
+C的理解：一致性是指所有节点 的数据是否一致，或者说，一份数据的多个分布式副本 是否一致
+
+A的理解：可用性是 指系统在任何时刻都能提供服务
+
+P的理解：分区容错性是指系统在网络分区（/ 局部断网）的情况下， 仍然 能提供服务。
+
+
+
+CA,放弃P ：强调 单节点， 单副本，或者只有一个正本，没有副本。 简单说，CA 将所有数据都放在一个分布式节点上，这同时放弃了系统的可扩展性， 不属于 分布式系统范围了。
+
+CP，放弃A：强调副本之间的 强一致性， 意味着 低性能。 一旦系统遇到故障时，受影响的服务器需要等待一段时间，在恢复期间无法对外提供正常的服务。
+
+AP，放弃C：强调副本之间的 高性能， 意味着 弱一致性。这里的放弃一致性是指放弃数据强一致性，而保留数据的最终一致性。系统无法实时保持数据的一致，但承诺在一个限定的时间窗口内，数据最终能够达到一致的状态
+
+
+
+## CAP相关面试题
+### redis集群的分区容错性
+Redis Cluster 采用去中心化的架构，节点之间通过 Gossip 协议来进行信息交换。Gossip 协议就像在集群中 “传播小道消息”，每个节点 周期性地向其他节点发送状态信息， 也会接收其他节点传来的信息。这种方式使得集群能够快速感知到网络分区的情况。
+
+当网络分区发生时，例如部分节点之间无法通信，Redis Cluster 依然能够正常工作。
+
+它会根据集群配置和节点状态，让每个分区内的节点尽可能地独立运行。
+
+例如，在数据分片（Redis Cluster 将数据分成 16384 个槽位，分布在不同节点上）的情况下，每个分区内的节点可以继续处理自己负责槽位的读写请求，保证系统不会因为网络分区而完全瘫痪，体现了良好的分区容错能力。
+
+### redis集群的可用性
+在正常情况下，客户端可以向任意主节点发送读写请求。即使在节点故障转移过程中，大部分读写请求依然能够得到处理。
+
+Redis Cluster 具备高效的故障转移机制。 每个主节点都有对应的从节点，当主节点出现故障时，从节点会通过选举机制快速晋升为主节点。
+
+例如，假设一个主节点因为硬件故障或者网络问题无法正常工作，从节点能够在很短的时间（通常在毫秒级）内检测到这种情况，并开始竞选成为新的主节点。
+
+一旦竞选成功，新的主节点就可以接收客户端的读写请求，保证服务的可用性。
+
+### redis的一致性
+最终一致性，异步复制
+
+
+
+于是，redis是ap型
+
+
+
+# 内存管理
+## 内存分段
+早期os解决内存管理问题的重要方案
+
+<!-- 这是一张图片，ocr 内容为： -->
+![](https://cdn.nlark.com/yuque/0/2025/png/35552475/1760492188301-36b1dc32-fdaa-443c-8040-c78792e8212c.png)
+
+分段机制下的虚拟地址由两部分组成：段选择因子和段内偏移量
+
++ 段选择因子：16位的二进制值
+    - 请求特权级
+    - 表指示器
+    - **段描述符索引（最重要，等于是逻辑概念上的段号）：存储段的基地址**
++ 段内偏移量：相当于对于段起始地址的偏移（不能超过段的最大长度）
+
+虚拟地址通过**段表**与物理地址进行映射
+
+****
+
+产生的的问题：
+
++ 内存碎片
+    - 外部碎片
++ 内存交换效率低
+    - 交换内存的对象是大进程，机器会卡顿
+
+
+
+好处：产生连续的内存空间
+
+
+
+## 内存分页
+每一页为4kb,页表存储在内存中，MMU通过页表将虚拟地址转换为物理地址
+
+<!-- 这是一张图片，ocr 内容为： -->
+![](https://cdn.nlark.com/yuque/0/2025/png/35552475/1760492732272-7e265ba1-f6de-4b45-9a4c-bc26e4cd3539.png)
+
+虚拟地址的地址结构：
+
++ 虚拟页号：用于查找虚拟页对应的物理页帧号
++ 页内偏移量
+
+
+
+页表的信息：
+
++ 物理页帧号：虚拟页映射到的物理内存块编号，拼接页内偏移量即可得到物理地址
++ 有效位：标记该虚拟页是否已加载到物理内存
++ 权限位：控制页面的访问权限
++ 脏位：标注页面是否被修改
+
+
+
+多级页表：解决页表过于庞大的问题
+
+（32位机）两级页表
+
+核心思路：只为程序实际使用的虚拟页面创建页表项。
+
+【一级页号（P1）  |   二级页号（P2）   |   页内偏移】
+
+10				10 			    12             =32位
+
+一级页号：指向二级页表的起始地址
+
+二级页表：每个表项指向实际的物理页帧；只有在程序要用的时候才会创建对应的二级页表
+
+
+
+## 虚拟内存
+需要虚拟内存的原因：
+
+1. 让进程认为分配的是连续内存 
+2. 避免踩内存：踩内存就是指进程越界访问或者修改其他进程的内存
++ 独立页表隔离：每个进程有专属页表，虚拟地址只会映射到自己的物理内存区域
++ 权限校验拦截：页表项中包含权限位，进程越权操作
+
+
+
+虚拟内存的底层逻辑：“局部性原理”
+
+时间局部性：刚访问过的数据，短期内可能被再次访问
+
+空间局部性：刚放问过的数据，其相邻地址的数据短期内也可能被被访问
+
+所以：虚拟内存只需要将“当前高频访问的页面”加载到物理内存，其他的页面暂存硬盘，既满足程序运行需求，有最大化利用物理内存空间
+
+
+
+虚拟内存的完整映射流程：
+
+1. TLB快速查询（优先）
+2. 多级页表逐级查询
+3. 异常处理:例如发生主缺页，走企业级八股第一个回答
+4. 计算最终物理地址
+
+
+
+
+
+# 2g内存在20亿个整数中找到出现次数最多的数
+极端情况下，每个数都一样，该证书统计需要4b(具体数字)+4b(出现字数) =8b ，
+
+极端情况，每个数都不一样，此时占用空间最大：20亿*8b 接近16gb
+
+此时考虑拆分，拆分成若干等份，分别统计：
+
+某个数字需要精准分流，不能分流到不同等份中(hash)
+
+为什么采用hash分流：（1）随机分布性(2)相同key多次经过hash运算等到相同的值
+
+
+
+分成几等分？:
+
+2gb最多统计多少数？  2gb = 2 * 2^10（1024MB）* 2^10(1024KB) *2^10(1024B)B = 2*31B,除以2^3 b，等于 2^28个数；
+
+需要考虑整数的取值范围(2^32)（4字节的数，）  2^31 /  2 ^28 = 2^4 =16
+
+
+
+统计流程：
+
+1、从一个存储20亿整数的大文件中依次读取数据，通过hash分流到16个小文件中
+
+2、依次使用2gb内存中统计小文件中的整数出现次数，找出最大值
+
+3、综合16个小文件中找出的最大值进行比较找出全局最大值
+
+
+
+
+
+# 从url输入到生成网页，怎么样一个过程
+HTTP：解析url，生成对应的HTTP请求
+
+DNS：查询服务器域名对应的ip地址
+
+TCP:可靠传输
+
+IP:根据路由表，判断哪一个网卡作为原地址IP
+
+网卡：
+
+数据包从网络层到达网卡后，网卡就会将报复制到自身缓冲区中
+
+然后网卡中的MAC模块会从缓冲区中取出数据包，在其开头加上报头和起始帧分解符，在末尾加上用于检测错误的帧校验序列FCS
+
+完成上述操作后，网卡中的PHY模块会将数据包转为光电信号，通过物理接口流出电脑，流向网线，从而进入网络中的其他设备
+
+交换机：
+
+当交换机接收到从网卡发送过来的光电信号后，其内部PHY模块会将信号转换为通用模式，转给MAC模块
+
+mac模块将信号转为数字信息，并且通过包末尾的FCS进行错误检测，没问题就放进缓冲区
+
+然后交换机会查询数据包的目的MAC地址是否在自己的MAC地址表中有记录。如果有，就知道转发到那个端口上；如果没有，就会发生广播帧。向所有连接的设备询问该mac地址是谁的，当目标设备回复后，交换机会收集信息并更新到自己的MAC地址中，以便后续转发
+
+路由器
+
+路由器属于三层网络设备，各个端口都具有mac地址和ip地址
+
++ 路由器的 PHY 模块先将接收到的光电信号转换为数字信息，再由 MAC 模块进行处理，通过 FCS 校验数据包是否有误。
++ 然后路由器会检查 MAC 头部中的目的 MAC 地址，如果与自己的 MAC 地址匹配，就会将数据包交给网络层进行处理。
++ 在网络层，路由器会根据数据包的 IP 头中的目的 IP 地址，在路由表中查找下一跳的信息，以确定应该从哪个网络接口将数据包发出去。
++ 确定好输出接口后，路由器会根据路由表的网关列判断对方的地址，并通过 ARP（地址解析协议）根据 IP 地址查询下一跳的 MAC 地址。如果在 ARP 缓存中能找到对应的 MAC 地址，则直接使用；如果找不到，则发送 ARP 查询请求。
++ 最后，路由器会将数据包的源 MAC 地址设置为自己输出端口的 MAC 地址，目的 MAC 地址设置为下一跳设备的 MAC 地址（如果是最终目的地，则为服务端的 MAC 地址），然后将数据包交给数据链路层进行封装，再通过物理层将其发送出去，继续朝着服务端的方向传输。
+
+
+
+
+
+
+
+# 内核态和用户态区别及切换
+用户态：应用程序运行的状态，权限受限，只能访问用户自己的内存空间和有限的系统资源
+
+内核态：操作系统内核运行的状态，拥有最高权限，可以直接访问所有硬件资源(cpu/内存/磁盘/网卡)，能执行给cpu指令
+
+通过CPU特权级机制实现隔离
+
+切换方式：系统调用、硬件中断、异常
+
+## 系统调用：
+用户态主动请求内核服务，**读写文件，网络通信，内存分配**
+
+**流程：**
+
+1.用户态请求
+
+2.触发软中断
+
+3.内核处理，回复用户态上下文
+
+
+
+## 硬件中断
+当硬件设备完成操作（如网卡收到数据包、磁盘读写完成、键盘按下）时，会主动向 CPU 发送中断信号，强制触发用户态→内核态切换。
+
+流程：
+
+1.硬件触发中断：例如网卡收到数据后 触发中断请求
+
+2.cpu响应中断：cpu暂停当前用户程序，保持用户态上下文，切换到内核态，并根据中断号查找对应的终端服务程序
+
+3.内核处理中断：
+
+4.恢复用户态 
+
+
+
+## 系统调用和硬件中断区别
+|  | 系统调用 | 硬件中断 |
+| --- | --- | --- |
+| 触发方式 | 用户态应用程序 | 硬件设备或者异常 |
+| 核心用途 | 用户态去获取内核服务 | 处理外部事件 |
+| 触发时机 | 用户程序在需要时主动调用 | 随机发生（网络包随时到达） |
+
+
+## 异常
+跌入内核态，进行异常处理
+
+
+
+
+
+
+
+# linux创建进程和线程
+## fork会发生什么
+fork是一个系统调用，他会复制当前进程，生成一个几乎完全相同的新进程
+
+fork()流程:
+
+进程会为子进程创建一个新的TCB，包括进程ID、状态、优先级。子进程复制父进程的虚拟地址空间，使用写时复制机制（初始子进程和父进程共享同一块物理内存（只读），内核仅复制页表；当父进程或子进程修改内存数据的时候，内核才会为修改的页分配新的物理内存并复制数据，且仅复制被修改的页，而非全部）；
+
+子进程还会复制父进程的寄存器值（如程序计数器，栈指针等），然后子进程从fork()调用的返回出开始执行，也会复制信号处理信息，复制文件描述表。
+
+之后会分离，子进程的PID是全新的，父进程的PID会记录在子进程的PCB当中
+
+
+
+## linux创建线程
+pthread_create() 是posix线程库提供的用户态函数，底层是clone()（fork()本质上也是基于clone封装的）。clone可以指定哪些资源可以共享，内部是通过各种flags来控制的
+
+
+
+
+
+## git协作过程
+<!-- 这是一张图片，ocr 内容为： -->
+![](https://cdn.nlark.com/yuque/0/2025/png/35552475/1761460861796-0dbeebea-1e9a-42d8-a058-1d85f3b23702.png)
+
+```cpp
+git init  //初始化git仓库
+
+
+git add xxxx.xx //把修改提交到暂存区
+
+git push -u origin main //推送本地主分支(main)到远端仓库
+
+git clone  //克隆远程仓库
+
+git checkout main //切换到主分支
+
+git pull origin main //拉取远程主分支最新代码
+
+git branch feature/user-login // 创建分支（功能分支）
+
+git checkout feature/user-login //切换分支
+
+git add . //提交到暂存区
+
+git commit -m "feature:实现逻辑" //提交到本地仓库
+
+git push origin feature/user-login 
+    // 推送本地 feature/user-login 分支到远程，远程会自动创建同名分支
+
+
+```
+
+
+
+# 如何定义一个只能在堆上或者在栈上生成的类
+
+
+```cpp
+1.只能在堆上 生成对象的类（不能在栈上生成对象的类）
+
+a.私有析构
+b.提供公用接口用来delete
+class HeapOnly {
+    //只能在堆上生产
+    HeapOnly() =default;
+    
+    void destroy() {
+        delete this;
+    }
+
+private:
+    ~HeapOnly() =default;
+};
+
+最佳实践：
+class HeapOnly{
+public:
+
+    static HeapOnly* create() {
+        return new HeapOnly();
+    }
+
+    void destroy() {
+        delete this;
+    }
+
+    HeapOnly(const HeapOnly&) = delete;
+    HeapOnly& operator=(const HeapOnly&) = delete;
+private:
+    ~HeapOnly() =default;
+    HeapOnly() = default;
+
+}
+
+
+2.只在栈上生成对象
+class StackOnly{
+public:
+    StackOnly() = default;
+    ~StackOnly() = default;
+
+    void* operator new(size_t) = delete;
+    void* operator new[](size_t) =delete;
+    void* operator new(size_t,void* p )= delete;
+private:
+}
+```
+
+只能在堆上生成对象的类：
+
+禁用对象的自动析构（将析构设置为私有）
+
+
+
+只能在栈上生成对象的类：
+
+禁用new，禁用new[]，禁用placement new
+
+
+
+一、禁用栈上对象的原理
+
+栈对象的生命周期特点是：
+
++ 栈对象的生命周期是由编译器自动管理的，遵循“后进先出”原则
++ 当对象所在的作用域结束时（如函数返回、代码块结束），编译器会自动插入调用析构函数的代码，以销毁该对象并释放其占用的栈内存
+
+私有析构函数，编译器就无法自动析构该对象，所以也就不能够在栈上创建该对象
+
+
+
+二、禁用堆上对象
+
+禁用new
+
+
+
+# 死锁 与 破坏死锁
+互斥条件：资源在某一时刻只能被一个进程占用
+
+占有并等待：一个进程在持有某些资源的同时，申请新的资源而被阻塞
+
+非抢占条件：已经被进程占用的资源，不能被其他进程强行剥夺。
+
+环路等待：存在一种进程资源的循环链，其中每个进程都在等待下一个进程所持有的资源
+
+
+
+破坏死锁：
+
+一次性获取所有锁--》破坏占有并等待
+
+允许抢占--》破坏非抢占   ： 退让处理（基于超时）
+
+固定加锁顺序--》破坏循环等待
+
+
+
+# 什么时候会栈溢出
+递归调用过深：每次递归都会创建新的栈帧（存储函数参数、局部变量、返回地址），递归层级过多会耗尽占空间
+
+局部变量过大：
+
+函数调用链过长
+
+栈上分配超大对象：
+
+
+
+# 什么时候会造成内存不够用
+堆内存泄漏
+
+超大内存申请
+
+多线程占用大量内存
+
+静态、全局变量过大
+
+
+
+# 客户端滚动卡顿，什么原因，如何解决？
+卡顿原因：要渲染的数据太多了 ，界面线程阻塞
+
+解决：1、少返回数据 2、减少重复计算 3、避免线程阻塞
+
+1、对于对话的一些消息样式，提前定义好模板，不必等到每条消息都重新计算样式
+
+2、懒加载策略（对于大的数据：例如图片、表情），滚动到才加载
+
+3、默认只显示最近的，如果要看更前面的，需要点击”加载历史“再显示，这样做主要是为了防止数据量无限膨胀导致卡顿；降低滚动速度
+
+4、遇到复杂操作，分批次处理
+
+5、客户端本身缓存层设计
+
+
+
+
+
+# 类的内存布局
+首先清楚 类的内存布局，应该回答的是：一个类实例在内存中占用多少字节，以及这些字节是如何分配给类的各个成员的？
+
+分为几个部分，成员变量（这里有静态成员变量，有内存对齐） ， 成员函数（存储在代码区），虚函数表（存在rodata）、虚函数表指针
+
+对于实例，其内存布局应该为：
+
+vptr(8字节) -> 成员变量(这里有对齐) 
+
+
+
+另外明确一点：如果提到了分别在哪个区域，就说成员函数的机器码在**代码区**，静态成员变量存储在**全局/静态变量区**，new的对象在**堆**上，函数声明的局部对象在**栈**上
+
+成员变量的内存对齐：编译器根据目标平台的特性和数据类型的大小和对齐要求来生成相应的内存布局和对齐规则
+
+char 1个字节 short 2个字节 int 4个字节 double8个字节（GCC最大对齐值为8） 不够会填充
+
+
+
+# 
+
+
+# lock_guard和unique_lock
++ lock_guard：构造时锁定，析构时解锁
++ unique_lock：主要配合条件变量使用
+
+
+
+# C中如何实现C++中的类特性
+## 封装
+结构体+函数指针：用来模拟成员变量+成员函数
+
++ 用struct存储成员变量
++ 用函数指针存储“成员函数”。并以struct*作为函数的第一个参数（模拟this指针）
++ 用static限制作函数作用域
+
+```c
+typedef struct {
+    int x,y;
+    void (*print)(void* self);
+
+}Point;
+
+static void Point_print(void* self){
+    Point* p = (Point*)self;
+    printf("Point(%d, %d)\n", p->x, p->y);
+}
+
+void Point_init(Point* p, int x, int y) {
+    p->x = x ;
+    p->y = y ;
+    p->print =Point_print;
+}
+```
+
+
+
+## 继承
+结构体嵌套
+
++ 子类结构体首成员是父类结构体（内存布局兼容，保证父类指针可指向子类对象）
++ 初始化子类的时候先初始化父类，在初始化自身成员；
++ 可重写父类函数指针（模拟方法覆盖）
+
+```c
+
+typedef  struct {
+    Point base;
+    int radius;
+}Circle;
+
+static void Circle_print(void* self) {
+    Circle* c = (Circle*)self;
+    printf("Circle(%d, %d, r=%d)\n", c->base.x, c->base.y, c->radius);
+}
+
+void Circle_init(Circle* c, int x ,int y,int r ) {
+    Point_init(&c->base,x,y);
+    c->radius = r;
+    c->base.print =Circle_print;
+}
+```
+
+
+
+
+
+## 多态
+函数指针动态绑定
+
++ 定义包含函数指针的接口结构体（模拟虚函数表）
++ 子类实现接口的函数指针，运行时可以通过指针调用对应实现
+
+```c
+// 模拟虚函数表的接口
+typedef struct  {
+    void (*draw) (void* self) ;
+}ShapeVTable;
+
+
+//基类 包含续表指针
+typedef struct {
+    ShapeVTable* Vtable;
+    int x ,y;
+}Shape;
+
+//子类实现 （Circle的draw）
+static void Circle_draw(void* self) {
+    printf("Drawing Circle\n");
+}
+
+
+//子类虚表
+ShapeVTable circle_vtable = {Circle_draw};
+
+
+//子类构造：绑定虚表
+void Circle_init(Shape* s) {
+    s->Vtable = &circle_vtable;
+}
+
+//多态实现
+void draw_shape(Shape* s) {
+    s->Vtable->draw(s);
+}
+
+
+```
+
+
+
+## Redis里面的写法
+```c
+// Redis的核心“对象”结构体（简化版）
+typedef struct redisObject {
+    unsigned type:4;      // 数据类型（字符串/列表/哈希等）
+    unsigned encoding:4;  // 底层编码方式
+    unsigned lru:24;      // LRU淘汰标记
+    int refcount;         // 引用计数（内存管理）
+    void *ptr;            // 指向底层数据结构（如sds、quicklist）
+} robj;
+
+
+
+// 执行命令时的类型检查+多态调用
+void executeCommand(robj* key, char* cmd) {
+    if (strcmp(cmd, "LPUSH") == 0) {
+        if (key->type != OBJ_LIST) { // 检查类型
+            return error("WRONG TYPE");
+        }
+        listTypePush(key->ptr, ...); // 调用列表的push函数
+    } else if (strcmp(cmd, "HSET") == 0) {
+        if (key->type != OBJ_HASH) {
+            return error("WRONG TYPE");
+        }
+        hashTypeSet(key->ptr, ...); // 调用哈希的set函数
+    }
+}
+
+```
+
+redis命令执行依赖类型检查+多态操作
+
++ 每个命令(如lpush)，会先检查redisObject的type字段，确保操作类型匹配
++ 不同数据类型的操作由对应函数实现，通过type字段进行动态选择（模拟虚函数调用）
+
+
+
+## nginx源码里面的写法
+```c
+
+// Nginx的模块“接口”结构体（模拟虚函数表）
+typedef struct {
+    char* name;                // 模块名称
+    void* (*create_conf)(void); // 构造配置（模拟构造函数）
+    int (*init_module)(void*);  // 初始化模块
+    int (*handler)(void*);      // 核心处理函数（模拟虚函数）
+} ngx_module_t;
+
+// Nginx核心调用模块
+void ngx_process_request() {
+    ngx_module_t* modules[] = { &http_module, &log_module, ... };
+    for (int i=0; modules[i]; i++) {
+        void* conf = modules[i]->create_conf(); // 构造配置
+        modules[i]->init_module(conf);          // 初始化
+        modules[i]->handler(conf);              // 调用模块处理逻辑
+    }
+}
+```
+
+nginx的每个模块（如HTTP模块、日志模块）都通过nginx_module_t定义接口，包含模块名称、构造/初始化/处理函数（函数指针）
+
+nginx核心引擎通过ngx_module_t的函数指针统一调用模块：
+
++ 所有模块注册到核心的模块列表
++ 核心引擎遍历列表，调用到每个模块的handler函数
+
+# 笔试题 ACM模式
+
+
+```matlab
+#include <iostream>
+#include <linux/limits.h>
+#include <vector>
+#include <unordered_map>
+#include <string>
+#include <algorithm>
+using namespace std;
+
+
+struct ListNode {
+      int val;
+      ListNode* next;
+      ListNode(int x) : val(x), next(nullptr) {}
+  };
+
+ListNode* buildList(vector<int> List_vec ) {
+    ListNode* dummy = new ListNode(0);
+    ListNode* tail = dummy;
+
+
+    for (int i = 0 ; i < List_vec.size(); i++) {
+        tail->next = new ListNode(List_vec[i]);
+        tail = tail->next;
+    }
+    return dummy->next;
+}
+
+void printList(ListNode* head) {
+    ListNode* cur = head;
+    while (cur != nullptr) {
+        std::cout << cur->val;
+        if (cur->next != nullptr ) {
+            std::cout << "->";
+        }
+        cur = cur->next;
+    }
+    std::cout << std::endl;
+}
+
+class Solution {
+  public:
+    ListNode* mid_node(ListNode* head) {
+        ListNode* fast = head;
+        ListNode* slow = head;
+        while (fast && fast->next) {
+            fast = fast->next->next;
+            slow = slow->next;
+        }
+        return slow;
+    }
+
+    ListNode* reverse(ListNode* head) {
+        ListNode* pre = nullptr;
+        ListNode* cur = head;
+        ListNode* tmp;
+        while (cur) {
+            tmp = cur->next;
+            cur->next = pre;
+            pre = cur;
+            cur = tmp;
+        }
+        return pre;
+    }
+
+    bool isPalindrome(ListNode* head) {
+        ListNode* l1 = head;
+        ListNode* l2 = mid_node(head);
+        ListNode* l3 = reverse(l2);
+        while (l1 && l3) {
+            if (l1->val != l3->val) return false;
+            l1 = l1->next;
+            l3 = l3->next;
+        }
+        return true;
+    }
+
+    ListNode* detectCycle(ListNode* head) {
+        ListNode* fast = head ;
+        ListNode* slow = head;
+        while (fast && fast->next) {
+            fast = fast->next->next;
+            slow = slow->next;
+            if (fast == slow) {
+                fast = head;
+                while (fast != slow) {
+                    fast = fast->next;
+                    slow = slow->next;
+                }
+                return slow;
+            }
+        }
+        return nullptr;
+    }
+
+    ListNode* mergerTwoList(ListNode* l1, ListNode* l2) {
+        ListNode* dummy = new ListNode(0);
+        ListNode* cur = dummy;
+        while (l1 && l2) {
+            if (l1->val < l2->val) {
+                cur->next = l1;
+                l1 = l1->next;
+            } else {
+                cur->next = l2;
+                l2 = l2->next;
+            }
+            cur = cur->next;
+
+        }
+        l1 == nullptr ? cur->next = l2 : cur->next = l1;
+        return dummy->next;
+    }
+
+    ListNode* addTwonumber(ListNode* l1,ListNode* l2) {
+        int flag = 0 ;
+        ListNode* dummy = new ListNode(0);
+        ListNode* cur = dummy;
+        while(l1 || l2 || flag) {
+            if(l1) {
+                flag += l1->val;
+                l1 = l1->next;
+            }
+            if(l2) {
+                flag += l2->val;
+                l2 = l2->next;
+            }
+            cur->next = new ListNode(flag %10);
+            flag /= 10;
+            cur = cur->next;
+        }
+        return dummy->next;
+    }
+
+    ListNode* removeNthfromEnd(ListNode* head,int n){
+        ListNode* dummy = new ListNode(0);
+        dummy->next = head;
+        ListNode* fast = dummy;
+        ListNode* slow = dummy;
+        while(n--) {
+            fast = fast->next;
+        }
+        while(fast->next) {
+            fast = fast->next;
+            slow = slow->next;
+
+        }
+        slow->next =slow->next->next;
+        return dummy->next;
+    }
+
+    ListNode* swapPair(ListNode* head) {
+        ListNode* dummy = new ListNode(0);
+        dummy->next = head;
+        ListNode* pre = dummy;
+        while(pre->next && pre->next->next) {
+            ListNode* tmp1 = pre->next;
+            ListNode* tmp2 = pre->next->next;
+            ListNode* next_node =tmp2->next;
+            pre->next = tmp2;
+            tmp2->next = tmp1;
+            tmp1->next = next_node;
+            pre = tmp1;
+        }
+        return dummy->next;
+    }
+
+    ListNode* reverseKGroup(ListNode* head,int k) {
+        ListNode* dummy = new ListNode(0);
+        dummy->next = head;
+        int count =0 ;
+        ListNode* node = head;
+        while(node) {
+            count++;
+            node = node->next;
+        }
+        ListNode* pre =dummy;
+        ListNode* cur =head;
+        ListNode* p0 = dummy ;
+        for(; count >= k ; count-=k) {
+            for(int i =0 ; i < k ;i++) {
+                ListNode* tmp = cur->next;
+                cur->next =pre;
+                pre = cur;
+                cur = tmp;
+            }
+            ListNode* next_p0 = p0->next;
+            p0->next = pre;
+            next_p0->next =cur;
+            p0 = next_p0;
+        } 
+        return dummy->next;
+    }
+
+    ListNode* mid_node_sort_version(ListNode* head) {
+        ListNode* fast = head;
+        ListNode* slow = head;
+        ListNode* prev = slow;
+        while(fast && fast->next) {
+            fast = fast->next->next;
+            prev = slow;
+            slow = slow->next;
+        }
+        prev->next = nullptr;
+        return slow;
+    }
+
+    ListNode* sortList(ListNode* head) {
+        if(head == nullptr || head->next == nullptr) return head;
+        ListNode* head2 = mid_node_sort_version(head);
+        ListNode* left = sortList(head);
+        ListNode* right = sortList(head2);
+        return mergerTwoList(left,right);
+    }
+
+    ListNode* mergeKLists_sub(vector<ListNode*>& lists,int i ,int j ) {
+        int m = j -i ;
+        if(m ==  1) return lists[i];
+        if(m == 0) return nullptr;
+        ListNode* left = mergeKLists_sub(lists,  i, m/2+i);
+        ListNode* right = mergeKLists_sub(lists, m/2+i, j);
+        return mergerTwoList(left,right);
+    }
+
+    ListNode* mergeKLists(vector<ListNode*>& lists) {
+        return mergeKLists_sub(lists,0,lists.size());
+    }
+};
+
+
+class Node {
+public:
+    int key;
+    int val;
+    Node* prev;
+    Node* next;
+
+    Node(int key = 0 ,int val = 0 ) : key(key) , val(val) {}
+};
+
+class LRUCache {
+private:
+    int capacity;
+    Node* dummy;
+    unordered_map<int,Node*>  key_to_node ;
+
+    void remove(Node* x) {
+        x->prev->next = x->next;
+        x->next->prev = x->prev;
+       
+    }
+
+    void push_front(Node* x)  {
+        x->prev = dummy;
+        x->next = dummy->next;
+        x->next->prev = x;
+        x->prev->next = x;
+
+    }
+
+    Node* get_node(int key) {
+        auto iter = key_to_node.find(key);
+        if(iter == key_to_node.end()) {
+            return nullptr;
+        }
+        Node* node = iter->second;
+        remove(node);
+        push_front(node);
+        return node;
+    }
+
+public:
+    LRUCache(int capacity) : capacity(capacity) , dummy(new Node) {
+        dummy->next = dummy;
+        dummy->prev = dummy;
+    }
+
+    int get(int key){
+        Node* node = get_node(key);
+        return node ? node->val : -1;
+    }
+
+    void put(int key ,int value) {
+        Node* node = get_node(key);
+        if(node) {
+            node->val = value;
+            return;
+        }
+
+        key_to_node[key] = node = new Node(key,value);
+        push_front(node);
+        if(key_to_node.size()> capacity) {
+            Node* back_node = dummy->prev;
+            key_to_node.erase(back_node->key);
+            remove(back_node);
+            delete back_node;
+        }
+        
+    }
+
+    void printCache() {
+    Node* cur = dummy->next;
+    while(cur!=dummy) {
+        cout << "(" << cur->key << ":" << cur->val << ")" ;
+        cur =cur->next;
+    }
+    cout << endl;
+    }
+};
+
+
+int main() {
+//    ListNode* headA = new ListNode(1);
+//    ListNode* dummy = new ListNode(0);
+//    dummy->next =headA;
+//    int val = 2;
+//    ListNode* inter;
+//    while(val <=5) {
+//         if(val ==3) {
+//             inter = headA;
+//         }
+//         headA->next =new ListNode(val) ;
+//         headA =headA -> next;
+
+//         val++;
+//    }
+//    headA = dummy->next;
+//    printList(headA);、
+
+//普通情形
+    // vector<int> List_vec = {1,4,5};
+
+    // ListNode* head = buildList(List_vec);
+
+    // printList(head);
+
+    // vector<int> List_vec2 = {1,3,4};
+
+    // ListNode* head2 = buildList(List_vec2);
+
+    // printList(head2);
+
+    // vector<int> List_vec3 = {2,6};
+
+    // ListNode* head3 = buildList(List_vec3);
+
+    // printList(head3);
+
+    // Solution sol;
+
+    // vector<ListNode*> lists = {head,head2,head3};
+    // ListNode* node1 = sol.mergeKLists(lists);
+    
+    // printList(node1);
+
+
+// LRU测试
+
+    LRUCache* cache = new LRUCache(2);
+    cache->put(1,1);
+    cache->printCache();
+    cache->put(2,2);
+    cache->printCache();
+    cache->put(3,3);
+    cache->printCache();
+    cache->get(2);
+    cache->printCache();
+
+    return 0;
+}
+
+```
+
+
+
+```matlab
+
+#include <iostream>
+#include <queue>
+#include <vector>
+#include <stack>
+#include <climits>
+#include <algorithm>
+
+using namespace std;
+
+struct TreeNode {
+    int val;
+    TreeNode* left;
+    TreeNode* right;
+    TreeNode() : val(0) ,left(nullptr), right(nullptr) {}
+    TreeNode(int x) : val(x) ,left(nullptr), right(nullptr) {}
+    TreeNode(int x , TreeNode* left ,TreeNode* right) :  val(x) ,left(left), right(right) {}
+};
+
+TreeNode* buildtree(vector<int>& input) {
+    queue<TreeNode*> q;
+    TreeNode* root = new TreeNode(input[0]);
+    q.push(root);
+
+    int index =1;
+    while(!q.empty() && index < input.size() ) {
+        TreeNode* cur = q.front();
+        q.pop();
+
+        if(input[index] != -1) {
+            cur->left =new TreeNode(input[index]);
+            q.push(cur->left);
+        }
+
+        index++;
+
+       if(input[index] != -1 && index < input.size()) {
+            cur->right =new TreeNode(input[index]);
+            q.push(cur->right);
+        }
+        index++;
+    }
+    return root;
+}
+
+
+void printTreeLevelOrder(TreeNode* root) {
+        // 如果树为空，直接提示并返回
+       
+
+        // 创建一个队列用于存储待访问的节点
+        std::queue<TreeNode*> nodeQueue;
+        nodeQueue.push(root); // 将根节点入队
+
+        // 当队列不为空时，持续处理
+        while (!nodeQueue.empty()) {
+            // 获取当前层的节点数量
+            int levelSize = nodeQueue.size();
+
+            // 遍历当前层的所有节点
+            for (int i = 0; i < levelSize; ++i) {
+                // 取出队首节点
+                TreeNode* currentNode = nodeQueue.front();
+                nodeQueue.pop();
+
+                // 打印当前节点的值
+                if (currentNode != nullptr) {
+                    std::cout << currentNode->val << " ";
+                    
+                    // 将当前节点的左右子节点入队，为下一层遍历做准备
+                    // 注意：即使子节点为空，也入队，这样可以打印出 null
+                    nodeQueue.push(currentNode->left);
+                    nodeQueue.push(currentNode->right);
+                } else {
+                    // 如果节点为空，打印 null
+                    std::cout << "null ";
+                }
+            }
+            
+            // 当前层遍历完毕，换行
+            std::cout << std::endl;
+        }
+}
+
+class Solution {
+public:
+    vector<int> vec;
+    void traversal(TreeNode* root) {
+        if(root == NULL) return ;   
+        traversal(root->left);
+        vec.push_back(root->val);
+        traversal(root->right);
+    }
+
+    vector<int> inorderTraversal(TreeNode* root) {
+        vec.clear();
+        traversal(root);
+        return vec;
+    }
+
+    vector<int> inorderTraversal_iterative(TreeNode* root) {
+        stack<TreeNode*> st;
+        vector<int> result;
+        if(root == NULL ) return result;
+        else st.push(root);
+        while( !st.empty()) {
+            TreeNode* node = st.top();
+            st.pop();
+            if(node != NULL) {
+                if(node->right) st.push(node->right);
+                st.push(node);
+                st.push(NULL);
+                if(node->left) st.push(node->left);
+            }else {
+                node =st.top();
+                st.pop();
+                result.push_back(node->val);
+
+            }
+        }
+        return result;
+    }
+
+    int maxDepth(TreeNode* root) {
+        queue<TreeNode*> que;
+        int result;
+        if(root  == nullptr) return 0;
+        else que.push(root);
+        while(!que.empty()) {
+            int size = que.size();
+            for(int i = 0 ; i < size ;i++) {
+                TreeNode* node= que.front();
+                que.pop();
+                if(node->left) que.push(node->left);
+                if(node->right) que.push(node->right);
+            }
+            result++;
+        }
+        return result;
+    }
+        
+    TreeNode* invertTree(TreeNode* root){
+        stack<TreeNode*> st;
+        if(root==NULL) return nullptr;
+        else st.push(root);
+        while(!st.empty()) {
+            TreeNode* node = st.top();
+            st.pop();
+
+            swap(node->left,node->right);
+            if(node->left) st.push(node->left);
+            if(node->right) st.push(node->right);
+
+        }
+        return root;
+    }
+
+    bool isSymmetric(TreeNode* root) {
+        queue<TreeNode*> que;
+        if(root == nullptr) return true;
+        else {
+            que.push(root->left);
+            que.push(root->right);
+        }
+
+        while(!que.empty()) {
+            TreeNode* left = que.front();
+            que.pop();
+            TreeNode* right = que.front();
+            que.pop();
+            if(!left && !right) continue;
+            if(!left || !right || left->val != right->val) return false;
+            que.push(left->left);
+            que.push(right->right);
+            que.push(left->right);
+            que.push(right->left);
+        }
+        return true;
+    }
+
+    int result;
+    int depth(TreeNode* root) {
+        if(root == NULL) return 0;
+        int L = depth(root->left);
+        int R = depth(root->right);
+        result = max(result, L+R+1);
+        return max(L,R)+1;
+    }
+
+    int diameterOfBinaryTree(TreeNode* root) {
+        result =1;
+        depth(root);
+        return result-1;
+    }
+
+    TreeNode* dfs_for_sortedArrayToBST(vector<int>& nums,int start,int end) {
+        if(end == start) return NULL;
+        int mid = start + (end-start) /2;
+        return new TreeNode(nums[mid], dfs_for_sortedArrayToBST(nums,start,mid), dfs_for_sortedArrayToBST(nums,mid+1,end));
+    }
+
+    TreeNode* sortedArrayToBST(vector<int>& nums) {
+        return dfs_for_sortedArrayToBST(nums,0,nums.size());
+    }
+
+    TreeNode* head = nullptr;
+
+    void flatten(TreeNode* root) {
+        if(root == nullptr) return;
+        flatten(root->right);
+        flatten(root->left);
+        root->left =nullptr;
+        root->right = head;
+        head =root;
+    }
+
+    TreeNode* buildTree_from_preorder_inorder(vector<int>& preorder, vector<int>& inorder) {
+        if(preorder.size() == 0 ) return nullptr;
+        auto iter = std::find(inorder.begin(),inorder.end(),preorder[0]);
+        int left_size = iter - inorder.begin();
+        vector<int> pre1(preorder.begin() +1,preorder.begin()+ left_size +1);
+        vector<int> pre2(preorder.begin()+ left_size +1,preorder.end());
+        vector<int> in1(inorder.begin(),inorder.begin()+left_size);
+        vector<int> in2(inorder.begin()+left_size+1,inorder.end());
+        TreeNode* left = buildTree_from_preorder_inorder(pre1,in1);
+        TreeNode* right = buildTree_from_preorder_inorder(pre2,in2);
+        return new TreeNode(preorder[0],left,right);
+    }
+
+    int rootSum(TreeNode* root,long long targetSum) {
+        if(root = NULL) return 0;
+        int result = 0;
+        if(root->val == targetSum) return result++;
+        result += rootSum(root->left, targetSum - root->val);
+        result += rootSum(root->right, targetSum - root->val );
+        return result;
+    }
+
+    int pathSum(TreeNode* root, int targetSum) {
+        if(root == NULL) return 0 ;
+        int ret = rootSum(root, targetSum);
+        ret += pathSum(root->left,targetSum);
+        ret += pathSum(root->right,targetSum);
+        return ret;
+    
+    }
+
+    TreeNode* lowestCommonAncestor(TreeNode* root,TreeNode* p ,TreeNode* q) {
+        if(root == nullptr || root == p || root ==q) return root;
+        TreeNode* left = lowestCommonAncestor(root->left,p,q);
+        TreeNode* right = lowestCommonAncestor(root->right,p,q);
+        if(left != NULL && right != NULL )return root;
+        else if ( left == NULL && right != NULL) return right;
+        else if( left != NULL && right == NULL) return left;
+        else return NULL;
+    }
+
+    int dfs_for_maxPathSum(int&result ,TreeNode* root) {
+        if(root == nullptr) return 0;
+        int left = max(dfs_for_maxPathSum(result,root->left),0);
+        int right = max(dfs_for_maxPathSum(result,root->right),0);
+        result= max(left + right + root->val ,result);
+        return max(left,right) + root->val;
+    }
+    int maxPathSum(TreeNode* root) {
+        int result = INT_MIN;
+        dfs_for_maxPathSum(result,root);
+        return result;
+    }
+};
+
+int main() {
+    vector<int> input = {3,5,1,6,2,0,8,-1,-1,7,4};
+    TreeNode* root = buildtree(input);
+    printTreeLevelOrder(root);
+    Solution sol;
+    // vector<int> res = sol.inorderTraversal_iterative(root);
+ 
+    // for(int i = 0 ; i< res.size() ;i++) {
+    //     cout << res[i] ;
+    //     if(i != res.size() -1) {
+    //         cout << "," ;
+    //     }
+    // }
+
+    // int height = sol.diameterOfBinaryTree(root);
+    // cout<< height<<endl;
+    // printTreeLevelOrder(node);
+
+    // vector<int> array = {-10,-3,0,5,9};
+    // TreeNode* node = sol.sortedArrayToBST(array);
+    // printTreeLevelOrder(node);
+
+    // sol.flatten(root);
+    // printTreeLevelOrder(root);
+
+    // vector<int> preorder = {3,9,20,15,7};
+    // vector<int> inorder = {9,3,15,20,7};
+    // TreeNode* node = sol.buildTree_from_preorder_inorder(preorder,inorder);
+    // printTreeLevelOrder(node);
+
+    TreeNode* node = sol.lowestCommonAncestor(root,root->left,root->right);
+    cout << node->val <<endl;
+
+    return 0;
+}
+```
+
+
+
+```matlab
+#include <mutex>
+#include <thread>
+#include <chrono>
+#include <iostream>
+
+using namespace std;
+std::mutex mtx1;
+std::mutex mtx2;
+
+void thread_a() {
+    mtx1.lock();
+
+    cout << "线程a : 得到资源1" <<endl; 
+
+    mtx2.lock();
+
+    cout << "线程a: 得到资源2" <<endl;
+
+    mtx2.unlock();
+    mtx1.unlock();
+}
+
+void thread_b() {
+    mtx2.lock();
+
+    cout << "线程b : 得到资源2" <<endl; 
+
+    mtx1.lock();
+
+    cout << "线程b: 得到资源1" <<endl;
+
+    mtx1.unlock();
+    mtx2.unlock();
+}
+
+int main() {
+    std::thread threadA(thread_a);
+    std::thread threadB(thread_b);
+
+    threadA.join();
+    threadB.join();
+
+    cout <<"程序结束" <<endl;
+    return 0;
+}
+```
+
+
+
+```matlab
+#include <condition_variable>
+#include <mutex> 
+#include <queue> 
+#include <thread> 
+#include <iostream>
+using namespace  std;
+template <typename T>
+class BlockingQueue {
+public: 
+    BlockingQueue(bool nonblock_ = false ) : nonblock_(nonblock_) {} 
+
+    void push(const T &value) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        queue_.push(value);
+        not_empty_.notify_one();
+    }
+
+    bool pop(T& value) {
+        std::unique_lock<std::mutex> lock(mutex_);
+
+        not_empty_.wait(lock,[this] {return !queue_.empty() || nonblock_;}) ;
+        if(queue_.empty()) return false;
+
+        value = queue_.front();
+        queue_.pop();
+        return true;
+    }
+
+    void Cancel() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        nonblock_ =true;
+        not_empty_.notify_all();
+
+    }
+
+private:
+    bool nonblock_;
+    std::queue<T> queue_;
+    std::mutex mutex_;
+    std::condition_variable not_empty_;
+};
+
+void producer(BlockingQueue<int>& queue ){
+    for(int i = 0 ; i < 10 ;i++) {
+        int data = i;
+        queue.push(data);
+    }
+    std::cout <<  "producer push over"  <<std::endl;
+}
+
+void consume(BlockingQueue<int>& queue ) {
+    while(true) {
+        int data;
+        bool success = queue.pop(data);
+
+        if(!success) {
+            cout << "consumer fault" <<endl;
+            break;
+        }else {
+            cout << "consumer succes" <<endl;
+        }
+    }
+}
+
+int main() {
+    BlockingQueue<int> queue;
+    std::thread producer_thread(producer,std::ref(queue));
+    std::thread consumer_thread(consume,std::ref(queue));
+
+    producer_thread.join();
+    queue.Cancel();
+    consumer_thread.join();
+
+    
+    return 0;
+}
+```
+
+
+
+```matlab
+#include <unordered_map>
+#include <iostream>
+#include <vector>
+
+using namespace std;
+// LRU缓存
+class Node{
+public:
+    int key;
+    int val;
+    Node* prev;
+    Node* next;
+
+    Node(int key = 0 ,int val = 0) : key(key) , val(val) {}
+};
+
+class LRUcache {
+private:
+    int capacity;
+    Node* dummy;
+    unordered_map<int,Node*> key_to_node;
+
+    void remove(Node* x) {
+        x->prev->next = x->next;
+        x->next->prev = x->prev;
+
+    }
+
+    void push_front(Node* x) {
+        x->prev = dummy;
+        x->next = dummy->next;
+        x->prev->next = x;
+        x->next->prev = x;
+    }
+
+    Node* get_node(int key) {
+        auto iter = key_to_node.find(key);
+        if(iter == key_to_node.end()) {
+            return nullptr;
+        }
+        Node* node = iter->second;
+        remove(node);
+        push_front(node);
+        return node;
+    }
+
+public:
+    LRUcache(int capacity) : capacity(capacity) ,dummy(new Node){
+        dummy->next = dummy;
+        dummy->prev = dummy;
+    }
+
+    int get(int key) {
+        Node* node = get_node(key);
+        return node ? node->val :-1;
+    }
+
+    void put(int key,int value) {
+        Node* node = get_node(key);
+        if(node) {
+            node->val = value;
+            return;
+        }
+
+        key_to_node[key] = node = new Node(key,value);
+        push_front(node);
+        if(key_to_node.size() > capacity) {
+            Node* back_node = dummy->prev;
+            key_to_node.erase(back_node->key);
+            remove(back_node);
+            delete back_node;
+        }
+    }
+
+    void printLRU() {
+       Node* current = dummy->next;
+       while(current != dummy) {
+            if(current->next != dummy){
+                cout << "[" << current->key << ":" << current->val << "],";
+            }else {
+                cout << "[" << current->key << ":" << current->val << "]";
+            }
+            
+            current = current->next;
+       }
+        cout << endl;
+    }
+};
+
+
+int main() {
+    LRUcache lru(2);
+
+    lru.printLRU();
+    lru.put(1,1);
+    lru.printLRU();
+    lru.put(2,2);
+    lru.printLRU();
+    lru.put(3,3);
+    lru.printLRU();
+    return 0;
+}
+```
+
+
+
+```cpp
+
+#include <iostream> 
+#include <mutex> 
+#include <thread>
+using namespace std;
+
+mutex mtx;
+int step =1;
+void first() {
+    lock_guard<mutex> lock(mtx);
+    cout << "threadA:1 " <<endl;
+    step++;
+}
+
+void second() {
+    while(true) {
+        mtx.lock();
+        if(step == 2) {
+            cout << "threadB:2" <<endl; 
+            step++;
+            mtx.unlock();
+            break;
+        }
+        mtx.unlock();
+    }
+}
+
+
+
+void third() {
+    while(true) {
+        mtx.lock();
+        if(step ==3) {
+            cout << "threadC:3" <<endl; 
+            step++;
+            mtx.unlock();
+            break;
+        }
+        mtx.unlock();
+    }
+}
+
+int main() {
+    std::thread threadA(first);
+    std::thread threadB(second);
+    std::thread threadC(third);
+     threadA.join();
+    threadB.join();
+    threadC.join();
+
+    cout << "finished" <<endl;
+    return 0;
+}
+```
+
+
+
+
+
+
+
+# 背包问题
+## 先遍历物品还是先遍历背包？
+最值类问题（求最大价值、最小价值、最少物品数等等） 这个时候 两种都可以
+
+组合排列类问题（有多少种组合，有多少种排列） 那么
+
++ 先遍历物品，再遍历背包->计算组合数（不考虑顺序）  
++ 先遍历背包，后遍历物品->计算排列数（考虑顺序)
+
+我们用「凑金额」的完全背包例子（硬币`[1,2]`，目标金额`3`），通过**逐步推演遍历过程**，直观解释背后的逻辑。
+
+### 前提回顾
++ 组合数：凑 3 的组合是 `[1,1,1]`、`[1,2]` → 共 2 种（1+2 和 2+1 算 1 种）；
++ 排列数：凑 3 的排列是 `[1,1,1]`、`[1,2]`、`[2,1]` → 共 3 种（1+2 和 2+1 算 2 种）；
++ DP 定义：`dp[j]` 表示 “凑金额`j`的方案数”，初始`dp[0]=1`（凑 0 元只有 1 种方案：不选任何硬币）。
+
+---
+
+## 一、先遍历物品，后遍历背包（组合数：不考虑顺序）
+### 遍历逻辑
+先固定 “物品（硬币）” 的遍历顺序（比如先遍历 1 元，再遍历 2 元），再对每个物品，遍历所有能装下它的背包容量。**核心：物品的选择顺序被 “锁定”，不会出现 “先选 2 元再选 1 元” 的情况**。
+
+### 逐步推演（硬币 [1,2]，目标 3）
+#### 第一步：遍历物品 1（固定先处理 1 元硬币）
+遍历容量`j=1→3`（从小到大，完全背包允许重复选）：
+
++ `j=1`：`dp[1] += dp[1-1] = dp[0] = 1` → `dp[1]=1`（方案：[1]）；
++ `j=2`：`dp[2] += dp[2-1] = dp[1] = 1` → `dp[2]=1`（方案：[1,1]）；
++ `j=3`：`dp[3] += dp[3-1] = dp[2] = 1` → `dp[3]=1`（方案：[1,1,1]）；
+
+#### 第二步：遍历物品 2（后处理 2 元硬币）
+遍历容量`j=2→3`：
+
++ `j=2`：`dp[2] += dp[2-2] = dp[0] = 1` → `dp[2]=2`（方案：[1,1]、[2]）；
++ `j=3`：`dp[3] += dp[3-2] = dp[1] = 1` → `dp[3]=2`（方案：[1,1,1]、[1,2]）；
+
+### 关键结论
+最终`dp[3]=2`（组合数），因为：
+
++ 我们先处理 1 元，再处理 2 元 → 所有方案都是 “先选 1 元，后选 2 元”（如 [1,2]），**不会出现 “先选 2 元，后选 1 元”（[2,1]）的情况**；
++ 本质是 “物品的遍历顺序固定了选择顺序”，不同选择顺序的同一组物品（1 和 2）只会被统计一次 → 组合数。
+
+---
+
+## 二、先遍历背包，后遍历物品（排列数：考虑顺序）
+### 遍历逻辑
+先固定 “背包容量”，对每个容量，遍历所有物品（硬币），尝试用任意物品凑该容量。**核心：对每个容量，所有物品都有机会先被选，因此会统计 “不同选择顺序的同一组物品”**。
+
+### 逐步推演（硬币 [1,2]，目标 3）
+#### 第一步：遍历容量 j=1
+遍历所有物品（1、2）：
+
++ 物品 1：`j=1 ≥1` → `dp[1] += dp[0] =1` → `dp[1]=1`（方案：[1]）；
++ 物品 2：`j=1 <2` → 无更新；
+
+#### 第二步：遍历容量 j=2
+遍历所有物品（1、2）：
+
++ 物品 1：`j=2 ≥1` → `dp[2] += dp[1] =1` → `dp[2]=1`（方案：[1,1]）；
++ 物品 2：`j=2 ≥2` → `dp[2] += dp[0] =1` → `dp[2]=2`（新增方案：[2]）；
+
+#### 第三步：遍历容量 j=3
+遍历所有物品（1、2）：
+
++ 物品 1：`j=3 ≥1` → `dp[3] += dp[2] =2` → `dp[3]=2`（方案：[1,1,1]、[1,2]）；
++ 物品 2：`j=3 ≥2` → `dp[3] += dp[1] =1` → `dp[3]=3`（新增方案：[2,1]）；
+
+### 关键结论
+最终`dp[3]=3`（排列数），因为：
+
++ 处理容量 3 时，先尝试物品 1（得到 [1,2]），再尝试物品 2（得到 [2,1]）→ 两种选择顺序都被统计；
++ 本质是 “对每个容量，物品无固定顺序”，同一组物品（1 和 2）的不同选择顺序会被当作不同方案 → 排列数。
+
+
+
+例如amount= 3 coins = [1 ,2] 
+
+先遍历物品的话，那么此时就是组合数 1+2 算一种  ，总结果为 1+1+1 1+2 一共为2
+
+先遍历背包的话，那么此时就是排列数 1+2 2+1算两种，总结果为1+1+1 1+2 2+1 一共为3
+
+
+
+最里面的 从大到小遍历和从小到大遍历
+
+要是01bag就必须从大到小，因为只允许一次；要是完全bag就是从小到大，因为允许重复选择
+
+
+
+
+
+
+
+
+
+# 阻塞io 非阻塞io？  同步io 异步io？
+以网络io来说，需要经历两个阶段：
+
++ 阶段一：等待就绪，等待数据准备好，如网卡接收到数据
++ 阶段二：数据拷贝，将数据从【内核缓冲区】拷贝到【用户进程缓冲区】
+
+
+
+阻塞/非阻塞：关注调用io操作后，进程/线程是否会被挂起
+
+同步/异步：关注io操作的完成通知方式，以及谁来处理io结果
+
+
+
+阻塞io：阶段1/阶段2中，进程/线程会被挂起，直到操作完成
+
+非阻塞io：阶段1/阶段2中，进程/线程不会被挂起，调用后立即返回（就绪则处理，未就绪则返回错误）
+
+
+
+同步io：进程/线程主动等待io操作完成，且自己处理数据拷贝
+
+异步io：进程/线程无需等待IO操作完成，由内核完成「等待就绪 + 数据拷贝」后，通过信号 / 回调通知进程处理结果
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2026 noobyangzzz. All rights reserved.</p>
+        </div>
+    </footer>
+</body>
+</html>

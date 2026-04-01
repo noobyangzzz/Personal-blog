@@ -1,307 +1,341 @@
-// Blog App - Data loaded from MySQL via API
+// Blog App - Vue 3 + Vue Router
 
-class BlogApp {
-    constructor() {
-        this.sections = [];
-        this.articles = {};  // sectionSlug -> array of articles
-        this.currentSection = null;
-        this.currentArticle = null;
-        this.init();
-    }
-
-    async init() {
-        await this.loadSections();
-        await this.loadAllArticles();
-        this.renderNav();
-        this.renderSections();
-        this.setupEventListeners();
-    }
-
-    async loadSections() {
-        try {
-            const response = await fetch('/api/sections');
-            if (response.ok) {
-                this.sections = await response.json();
-            } else {
-                console.error('Failed to load sections:', response.status);
-                this.sections = [];
-            }
-        } catch (error) {
-            console.error('Failed to load sections:', error);
-            this.sections = [];
-        }
-    }
-
-    async loadAllArticles() {
-        try {
-            const response = await fetch('/api/articles');
-            if (response.ok) {
-                const articles = await response.json();
-                // Group articles by section
-                this.articles = {};
-                for (const article of articles) {
-                    if (!this.articles[article.section]) {
-                        this.articles[article.section] = [];
-                    }
-                    this.articles[article.section].push(article);
-                }
-            } else {
-                console.error('Failed to load articles:', response.status);
-                this.articles = {};
-            }
-        } catch (error) {
-            console.error('Failed to load articles:', error);
-            this.articles = {};
-        }
-    }
-
-    async loadArticleDetail(articleKey) {
-        try {
-            const response = await fetch(`/api/article?id=${articleKey}`);
-            if (response.ok) {
-                return await response.json();
-            }
-            return null;
-        } catch (error) {
-            console.error('Failed to load article detail:', error);
-            return null;
-        }
-    }
-
-    setupEventListeners() {
-        document.addEventListener('click', (e) => {
-            const articleItem = e.target.closest('.article-item');
-            if (articleItem && articleItem.dataset.articleId) {
-                e.preventDefault();
-                this.showArticle(articleItem.dataset.articleId);
-            }
-        });
-
-        window.addEventListener('popstate', (e) => {
-            if (e.state && e.state.page) {
-                if (e.state.page === 'article' && e.state.articleId) {
-                    this.showArticle(e.state.articleId);
-                } else if (e.state.page === 'section' && e.state.sectionId) {
-                    this.showSection(e.state.sectionId);
-                } else {
-                    this.showHome();
-                }
-            }
-        });
-    }
-
-    renderNav() {
-        const dynamicNav = document.getElementById('dynamic-nav');
-        dynamicNav.innerHTML = this.sections.map(section => `
-            <a class="nav-link section-link" data-section="${section.id}">${section.name}</a>
-        `).join('');
-
-        dynamicNav.querySelectorAll('.section-link').forEach(link => {
-            link.addEventListener('click', (e) => {
-                e.preventDefault();
-                const sectionId = e.target.dataset.section;
-                this.showSection(sectionId);
-                history.pushState({page: 'section', sectionId}, '', `#${sectionId}`);
-            });
-        });
-    }
-
-    renderSections() {
-        const wrapper = document.getElementById('sections-wrapper');
-        wrapper.innerHTML = this.sections.map(section => `
-            <div class="section-card" style="--section-color: ${section.color}" data-section-id="${section.id}">
-                <div class="section-icon">${section.icon}</div>
-                <h3 class="section-title">${section.name}</h3>
-                <p class="section-desc">${section.description}</p>
-                <div class="section-count">${this.articles[section.id]?.length || 0} 篇文章</div>
+// HomeView Component
+const HomeView = {
+    template: `
+        <section class="section hero">
+            <div class="container">
+                <h2>欢迎来到 noobyangzzz 的博客</h2>
+                <p>记录生活，分享感悟</p>
             </div>
-        `).join('');
-
-        wrapper.querySelectorAll('.section-card').forEach(card => {
-            card.addEventListener('click', () => {
-                const sectionId = card.dataset.sectionId;
-                this.showSection(sectionId);
-                history.pushState({page: 'section', sectionId}, '', `#${sectionId}`);
-            });
-        });
-    }
-
-    showSection(sectionId) {
-        const section = this.sections.find(s => s.id === sectionId);
-        if (!section) return;
-
-        this.currentSection = section;
-
-        document.querySelectorAll('.nav-link').forEach(link => {
-            link.classList.remove('active');
-            if (link.dataset.section === sectionId) {
-                link.classList.add('active');
-            }
-        });
-
-        document.getElementById('home-section').style.display = 'none';
-        document.getElementById('sections-container').style.display = 'none';
-        document.getElementById('content-section').style.display = 'block';
-        document.getElementById('article-section').style.display = 'none';
-
-        this.renderSectionContent(section);
-    }
-
-    renderSectionContent(section) {
-        const contentWrapper = document.getElementById('content-wrapper');
-        const articles = this.articles[section.id] || [];
-
-        contentWrapper.innerHTML = `
-            <div class="content-header">
-                <div class="content-icon">${section.icon}</div>
-                <div>
-                    <h2 class="content-title">${section.name}</h2>
-                    <p class="content-desc">${section.description}</p>
+        </section>
+        <section class="section sections-grid">
+            <div class="container">
+                <div class="sections-wrapper">
+                    <div v-for="section in sections" :key="section.id"
+                         class="section-card"
+                         :style="{ '--section-color': section.color }"
+                         @click="goToSection(section.id)">
+                        <div class="section-icon">{{ section.icon }}</div>
+                        <h3 class="section-title">{{ section.name }}</h3>
+                        <p class="section-desc">{{ section.description }}</p>
+                        <div class="section-count">{{ getArticleCount(section.id) }} 篇文章</div>
+                    </div>
                 </div>
             </div>
-            <div class="article-list">
-                ${articles.length > 0 ? articles.map(article => `
-                    <div class="article-item" data-article-id="${article.id}">
-                        <h3 class="article-title">${article.title}</h3>
-                        <p class="article-excerpt">${article.excerpt}</p>
-                        <div class="article-meta">发布于 ${article.date} | 作者: ${article.author} | 阅读: ${article.views}</div>
-                    </div>
-                `).join('') : `
-                    <div class="empty-state">
-                        <div class="empty-state-icon">📝</div>
-                        <p>暂无文章</p>
-                    </div>
-                `}
-            </div>
-        `;
-    }
-
-    async showArticle(articleId) {
-        console.log('showArticle called:', articleId);
-
-        // Find article from cached data
-        let article = null;
-        let section = null;
-        for (const sec of this.sections) {
-            const found = (this.articles[sec.id] || []).find(a => a.id === articleId);
-            if (found) {
-                article = found;
-                section = sec;
-                break;
-            }
-        }
-
-        if (!article || !section) {
-            console.error('Article not found:', articleId);
-            return;
-        }
-
-        this.currentArticle = article;
-
-        document.querySelectorAll('.nav-link').forEach(link => {
-            link.classList.remove('active');
-        });
-
-        document.getElementById('home-section').style.display = 'none';
-        document.getElementById('sections-container').style.display = 'none';
-        document.getElementById('content-section').style.display = 'none';
-        document.getElementById('article-section').style.display = 'block';
-
-        document.getElementById('back-to-section').onclick = () => {
-            history.back();
+        </section>
+    `,
+    data() {
+        return {
+            sections: [],
+            articles: {}
         };
+    },
+    created() {
+        this.loadData();
+    },
+    methods: {
+        async loadData() {
+            await Promise.all([this.loadSections(), this.loadArticles()]);
+        },
+        async loadSections() {
+            try {
+                const response = await fetch('/api/sections');
+                if (response.ok) {
+                    this.sections = await response.json();
+                }
+            } catch (error) {
+                console.error('Failed to load sections:', error);
+            }
+        },
+        async loadArticles() {
+            try {
+                const response = await fetch('/api/articles');
+                if (response.ok) {
+                    const articles = await response.json();
+                    this.articles = {};
+                    for (const article of articles) {
+                        if (!this.articles[article.section]) {
+                            this.articles[article.section] = [];
+                        }
+                        this.articles[article.section].push(article);
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load articles:', error);
+            }
+        },
+        getArticleCount(sectionId) {
+            return this.articles[sectionId]?.length || 0;
+        },
+        goToSection(sectionId) {
+            this.$router.push('/section/' + sectionId);
+        }
+    }
+};
 
-        // Render article with cached data first
-        const articleWrapper = document.getElementById('article-wrapper');
-        articleWrapper.innerHTML = `
-            <div class="article-detail">
-                <div class="article-detail-header">
-                    <h1 class="article-detail-title">${article.title}</h1>
-                    <div class="article-detail-meta">
-                        <span>发布于 ${article.date}</span> |
-                        <span>作者: ${article.author}</span> |
-                        <span>阅读: <span id="article-views">${article.views}</span></span>
+// SectionView Component
+const SectionView = {
+    template: `
+        <section class="section content-section">
+            <div class="container">
+                <button class="back-btn" @click="$router.push('/')">← 返回首页</button>
+                <div class="content-wrapper">
+                    <div class="content-header">
+                        <div class="content-icon">{{ section?.icon }}</div>
+                        <div>
+                            <h2 class="content-title">{{ section?.name }}</h2>
+                            <p class="content-desc">{{ section?.description }}</p>
+                        </div>
+                    </div>
+                    <div class="article-list">
+                        <div v-if="sectionArticles.length === 0" class="empty-state">
+                            <div class="empty-state-icon">📝</div>
+                            <p>暂无文章</p>
+                        </div>
+                        <div v-else v-for="article in sectionArticles" :key="article.id"
+                             class="article-item"
+                             @click="goToArticle(article.id)">
+                            <h3 class="article-title">{{ article.title }}</h3>
+                            <p class="article-excerpt">{{ article.excerpt }}</p>
+                            <div class="article-meta">发布于 {{ article.date }} | 作者: {{ article.author }} | 阅读: {{ article.views }}</div>
+                        </div>
                     </div>
                 </div>
-                <div class="article-detail-content" id="article-content-loading">加载中...</div>
             </div>
-        `;
-
-        // Load article content from static HTML file with progressive rendering
-        try {
-            const contentResponse = await fetch(`/${article.content_path}`);
-            if (contentResponse.ok) {
-                const contentHtml = await contentResponse.text();
-                await this.renderContentProgressive(contentHtml);
-            } else {
-                document.getElementById('article-content-loading').innerHTML = '<p>内容加载失败</p>';
-            }
-        } catch (error) {
-            console.error('Failed to load article content:', error);
-            document.getElementById('article-content-loading').innerHTML = '<p>内容加载失败</p>';
+        </section>
+    `,
+    data() {
+        return {
+            sections: [],
+            articles: {}
+        };
+    },
+    computed: {
+        sectionId() {
+            return this.$route.params.sectionId;
+        },
+        section() {
+            return this.sections.find(s => s.id == this.sectionId);
+        },
+        sectionArticles() {
+            return this.articles[this.sectionId] || [];
         }
-
-        // Log the visit via API
-        this.logVisit(articleId, section.id);
-
-        history.pushState({page: 'article', articleId, sectionId: section.id}, '', `#article-${articleId}`);
-    }
-
-    async renderContentProgressive(contentHtml) {
-        const container = document.getElementById('article-content-loading');
-        if (!container) return;
-
-        // Split content by h1 sections for progressive loading
-        const sections = contentHtml.split(/(?=<h1>)/);
-
-        for (let i = 0; i < sections.length; i++) {
-            await new Promise(resolve => {
-                requestAnimationFrame(() => {
-                    container.innerHTML += sections[i];
-                    resolve();
-                });
-            });
-            // Small delay between sections to prevent blocking
-            if (i < sections.length - 1) {
-                await new Promise(resolve => setTimeout(resolve, 16));
+    },
+    created() {
+        this.loadData();
+    },
+    methods: {
+        async loadData() {
+            await Promise.all([this.loadSections(), this.loadArticles()]);
+        },
+        async loadSections() {
+            try {
+                const response = await fetch('/api/sections');
+                if (response.ok) {
+                    this.sections = await response.json();
+                }
+            } catch (error) {
+                console.error('Failed to load sections:', error);
             }
-        }
-    }
-
-    async logVisit(articleId, sectionId) {
-        try {
-            await fetch(`/api/visit?article=${articleId}&section=${sectionId}`, {
-                method: 'POST',
-                keepalive: true
-            });
-            // Update view count in UI
-            const viewsEl = document.getElementById('article-views');
-            if (viewsEl) {
-                const currentViews = parseInt(viewsEl.textContent) || 0;
-                viewsEl.textContent = currentViews + 1;
+        },
+        async loadArticles() {
+            try {
+                const response = await fetch('/api/articles');
+                if (response.ok) {
+                    const articles = await response.json();
+                    this.articles = {};
+                    for (const article of articles) {
+                        if (!this.articles[article.section]) {
+                            this.articles[article.section] = [];
+                        }
+                        this.articles[article.section].push(article);
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load articles:', error);
             }
-        } catch (error) {
-            console.error('Failed to log visit:', error);
+        },
+        goToArticle(articleId) {
+            this.$router.push('/article/' + articleId);
         }
     }
+};
 
-    showHome() {
-        document.querySelectorAll('.nav-link').forEach(link => {
-            link.classList.remove('active');
-            const homeLink = document.querySelector('.nav-link[data-section="home"]');
-            if (homeLink) homeLink.classList.add('active');
+// ArticleView Component
+const ArticleView = {
+    template: `
+        <section class="section content-section">
+            <div class="container">
+                <button class="back-btn" @click="goBack">← 返回</button>
+                <div class="article-wrapper">
+                    <div class="article-detail">
+                        <div class="article-detail-header">
+                            <h1 class="article-detail-title">{{ article?.title }}</h1>
+                            <div class="article-detail-meta">
+                                <span>发布于 {{ article?.date }}</span> |
+                                <span>作者: {{ article?.author }}</span> |
+                                <span>阅读: <span id="article-views">{{ article?.views }}</span></span>
+                            </div>
+                        </div>
+                        <div class="article-detail-content" id="article-content-loading" v-html="renderedContent"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    `,
+    data() {
+        return {
+            sections: [],
+            articles: {},
+            article: null,
+            renderedContent: '加载中...'
+        };
+    },
+    computed: {
+        articleId() {
+            return this.$route.params.articleId;
+        }
+    },
+    mounted() {
+        this.loadData().then(() => {
+            return this.loadArticleContent();
+        }).then(() => {
+            this.logVisit();
         });
+    },
+    watch: {
+        async $route(to, from) {
+            if (to.params.articleId !== from.params.articleId) {
+                this.article = null;
+                this.renderedContent = '加载中...';
+                await this.loadData();
+                await this.loadArticleContent();
+                this.logVisit();
+            }
+        }
+    },
+    methods: {
+        async loadData() {
+            await Promise.all([this.loadSections(), this.loadArticles()]);
+            this.findArticle();
+        },
+        async loadSections() {
+            try {
+                const response = await fetch('/api/sections');
+                if (response.ok) {
+                    this.sections = await response.json();
+                }
+            } catch (error) {
+                console.error('Failed to load sections:', error);
+            }
+        },
+        async loadArticles() {
+            try {
+                const response = await fetch('/api/articles');
+                if (response.ok) {
+                    const articles = await response.json();
+                    this.articles = {};
+                    for (const article of articles) {
+                        if (!this.articles[article.section]) {
+                            this.articles[article.section] = [];
+                        }
+                        this.articles[article.section].push(article);
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load articles:', error);
+            }
+        },
+        findArticle() {
+            for (const sec of this.sections) {
+                const found = (this.articles[sec.id] || []).find(a => a.id == this.articleId);
+                if (found) {
+                    this.article = found;
+                    this.currentSection = sec;
+                    break;
+                }
+            }
+        },
+        async loadArticleContent() {
+            if (!this.article?.content_path) {
+                this.renderedContent = '<p>文章未找到</p>';
+                return;
+            }
 
-        document.getElementById('home-section').style.display = 'block';
-        document.getElementById('sections-container').style.display = 'block';
-        document.getElementById('content-section').style.display = 'none';
-        document.getElementById('article-section').style.display = 'none';
-        this.currentSection = null;
-        this.currentArticle = null;
+            try {
+                const url = '/' + this.article.content_path;
+                const contentResponse = await fetch(url);
+                if (contentResponse.ok) {
+                    const contentHtml = await contentResponse.text();
+                    // Extract only .article-detail-content from the full HTML page
+                    const contentMatch = contentHtml.match(/<div class="article-detail-content">([\s\S]*?)<\/div>\s*<\/div>\s*<\/section>\s*<\/main>/);
+                    const extractedContent = contentMatch ? contentMatch[1] : contentHtml;
+                    await this.renderContentProgressive(extractedContent);
+                } else {
+                    this.renderedContent = '<p>内容加载失败</p>';
+                }
+            } catch (error) {
+                console.error('Failed to load article content:', error);
+                this.renderedContent = '<p>内容加载失败</p>';
+            }
+        },
+        async renderContentProgressive(contentHtml) {
+            // Split content by h1 sections for progressive loading
+            const sections = contentHtml.split(/(?=<h1>)/);
+            const container = document.getElementById('article-content-loading');
+            if (!container) return;
 
-        history.pushState({page: 'home'}, '', '#home');
+            container.innerHTML = '';
+
+            for (let i = 0; i < sections.length; i++) {
+                await new Promise(resolve => {
+                    requestAnimationFrame(() => {
+                        container.innerHTML += sections[i];
+                        resolve();
+                    });
+                });
+            }
+        },
+        async logVisit() {
+            if (!this.article || !this.currentSection) return;
+
+            try {
+                await fetch(`/api/visit?article=${this.article.id}&section=${this.currentSection.id}`, {
+                    method: 'POST',
+                    keepalive: true
+                });
+                // Increment view count in UI
+                if (this.article) {
+                    this.article.views = (this.article.views || 0) + 1;
+                }
+            } catch (error) {
+                console.error('Failed to log visit:', error);
+            }
+        },
+        goBack() {
+            if (window.history.length > 1) {
+                this.$router.back();
+            } else {
+                this.$router.push('/');
+            }
+        }
     }
-}
+};
 
-window.showHome = () => window.blogApp?.showHome();
-window.blogApp = new BlogApp();
+// Vue Router Configuration
+const routes = [
+    { path: '/', component: HomeView },
+    { path: '/section/:sectionId', component: SectionView },
+    { path: '/article/:articleId', component: ArticleView }
+];
+
+const router = VueRouter.createRouter({
+    history: VueRouter.createWebHashHistory(),
+    routes: routes
+});
+
+// Create and mount Vue App
+const app = Vue.createApp({});
+app.use(router);
+app.mount('#app');

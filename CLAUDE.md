@@ -1,40 +1,73 @@
 # noobyangzzz Blog
 
-个人博客项目，基于原生 HTML/CSS/JavaScript 构建，后端采用 C++ + MySQL。
+个人博客项目，前端采用 Vue 3 + Vue Router，后端采用 C++ + MySQL。
 
 ## 项目结构
 
 ```
 blog/
-├── index.html          # 主页
+├── index.html          # 单一入口 HTML (Vue 3 应用挂载点)
 ├── README.md           # 项目说明
 ├── CLAUDE.md           # 本文档
 ├── .gitignore          # Git 忽略配置
 ├── css/
 │   └── style.css       # 样式文件
 ├── js/
-│   └── main.js         # 核心逻辑 (BlogApp 类，从 API 读取数据)
+│   └── main.js         # Vue 3 应用 (HomeView/SectionView/ArticleView 组件)
 ├── article/            # 文章详情页 HTML（静态内容）
 │   ├── tech-1.html ~ tech-6.html
 │   ├── movie-1.html ~ movie-2.html
 │   └── music-1.html ~ music-2.html
-├── drafts/              # 草稿目录 (Markdown/PDF 文档)
-├── log_tail.py          # 日志监控脚本
-├── backend/             # C++ 后端 API
-│   ├── main.cpp         # Crow HTTP 框架 + MySQL Connector
-│   └── CMakeLists.txt   # 构建配置
-└── config/              # 配置文件备份 (已迁移到 MySQL)
+├── drafts/             # 草稿目录 (Markdown/PDF 文档)
+├── log_tail.py         # 日志监控脚本
+├── backend/            # C++ 后端 API
+│   ├── main.cpp        # Crow HTTP 框架 + MySQL Connector
+│   └── CMakeLists.txt  # 构建配置
+└── config/             # 配置文件备份 (已迁移到 MySQL)
 ```
 
 **Git 仓库**: https://github.com/noobyangzzz/Personal-blog
 
 ## 技术栈
 
-- **前端**: 原生 HTML5 + CSS3 + JavaScript (ES6+)
+- **前端框架**: Vue 3 + Vue Router 4 (CDN 引入)
+- **前端原生**: HTML5 + CSS3 + JavaScript (ES6+)
 - **后端**: C++ (Crow HTTP framework)
 - **数据库**: MySQL 8.0
 - **服务器**: Nginx 1.16.1
 - **端口**: 30000 (前端), 8080 (后端 API)
+
+## 前端架构
+
+### Vue 组件
+
+| 组件 | 路由 | 功能 |
+|------|------|------|
+| `HomeView` | `/` | 首页，展示所有板块卡片 |
+| `SectionView` | `/section/:sectionId` | 板块页，展示该板块下所有文章 |
+| `ArticleView` | `/article/:articleId` | 文章页，展示文章详情内容 |
+
+### 路由配置 (main.js)
+
+```javascript
+const routes = [
+    { path: '/', component: HomeView },
+    { path: '/section/:sectionId', component: SectionView },
+    { path: '/article/:articleId', component: ArticleView }
+];
+```
+
+使用 Hash 模式路由 (`/#/article/tech-1`)。
+
+### 文章内容加载流程
+
+1. `ArticleView.mounted()` 调用 `loadData()`
+2. `loadData()` 并行获取 `sections` 和 `articles` 数据
+3. `findArticle()` 根据 `articleId` 查找对应文章
+4. `loadArticleContent()` 获取静态 HTML 文件
+5. 正则提取 `<div class="article-detail-content">` 内容
+6. `renderContentProgressive()` 分帧渐进式渲染
+7. `logVisit()` 记录访问
 
 ## 数据库
 
@@ -87,9 +120,9 @@ Database: blog_db
 | 端点 | 用途 |
 |------|------|
 | `GET /api/sections` | 获取板块列表 |
-| `GET /api/articles?section=xxx` | 获取文章列表（可按板块过滤，已过滤隐藏文章） |
-| `GET /api/article?id=xxx` | 获取文章详情（已过滤隐藏文章） |
-| `POST /api/visit?article=xxx&section=xxx` | 记录文章访问，自动更新阅读数 |
+| `GET /api/articles` | 获取文章列表 |
+| `GET /api/article?id=xxx` | 获取文章详情 |
+| `POST /api/visit?article=xxx&section=xxx` | 记录文章访问 |
 
 **注意**：访问记录通过 Nginx 的 `X-Real-IP` 头获取真实客户端 IP。
 
@@ -133,9 +166,6 @@ pkill -f log_tail.py && python3 /home/yang/blog/log_tail.py &
 ### 隐藏文章
 设置 `articles.is_hidden = 1`，文章将不会在列表显示，API 也会过滤掉。
 
-### 文章内容加载
-文章内容（HTML）通过 `content_path` 字段指定的静态文件路径直接加载，不存储在数据库中。
-
 ### 文章内容懒加载
 文章详情页使用渐进式渲染策略，避免大型文章（如 tech-6.html）加载时阻塞浏览器：
 
@@ -145,7 +175,7 @@ pkill -f log_tail.py && python3 /home/yang/blog/log_tail.py &
    - 通用策略，适用于所有文章
    - 无需修改文章 HTML 结构
    - 未来发布的任何大型文章都会自动受益于此策略
-4. **触发条件**: 文章内容通过 `showArticle()` 加载时自动启用
+4. **触发条件**: `ArticleView` 组件加载文章内容时自动启用
 
 ### 文章发布流程
 项目使用 `blog-publish` skill 将 Markdown 发布为博客文章：
